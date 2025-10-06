@@ -721,8 +721,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
         try{
           const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
           if(p && p.token && p.owner && p.repo){
-            if(!sessionStorage.getItem('hourlogger.autoload62')){
-              sessionStorage.setItem('hourlogger.autoload62','1');
+            if(!sessionStorage.getItem('hourlogger.autoload53')){
+              sessionStorage.setItem('hourlogger.autoload53','1');
               const ok = await loadSilently();
               if(ok){
                 try { if (typeof renderMenu==='function') renderMenu(); if (typeof renderWeek==='function') renderWeek(); } catch(_){}
@@ -735,119 +735,91 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 })();
   </script>
 
-<!-- v62 Cloud Sync Overrides -->
+<!-- Cloud Sync v62 -->
 <script>
-(function(){
-  function q(id){ return document.getElementById(id); }
-  async function saveSettingsOnly(){
-    try{
-      const payload = {
-        owner: q('ghOwner')?.value?.trim() || '',
-        repo: q('ghRepo')?.value?.trim() || '',
-        branch: q('ghBranch')?.value?.trim() || 'main',
-        path: q('ghPath')?.value?.trim() || 'data/hourlogger-data.json',
-        token: q('ghToken')?.value?.trim() || ''
-      };
-      localStorage.setItem('hourlogger.sync', JSON.stringify(payload));
-      alert('Sync settings saved locally.\n(No data push to GitHub.)');
-    }catch(e){
-      console.error(e);
-      alert('Failed to save settings: ' + e.message);
-    }
+(() => {
+  const LS = window.localStorage;
+  const K = { owner:'gh.owner', repo:'gh.repo', branch:'gh.branch', path:'gh.path', token:'gh.token' };
+
+  function el(id){ return document.getElementById(id); }
+
+  async function saveCloudSettings(){
+    const owner = el('gh-owner')?.value?.trim() ?? LS.getItem(K.owner) ?? '';
+    const repo  = el('gh-repo')?.value?.trim()  ?? LS.getItem(K.repo)  ?? '';
+    const branch= el('gh-branch')?.value?.trim()?? LS.getItem(K.branch)?? 'main';
+    const path  = el('gh-path')?.value?.trim()  ?? LS.getItem(K.path)  ?? '';
+    const token = el('gh-token')?.value?.trim() ?? LS.getItem(K.token) ?? '';
+    LS.setItem(K.owner, owner);
+    LS.setItem(K.repo, repo);
+    LS.setItem(K.branch, branch || 'main');
+    LS.setItem(K.path, path);
+    if (token) LS.setItem(K.token, token);
+    if (window.toast) window.toast('Cloud sync settings saved (no data push).');
   }
 
-  async function loadFromGitHubToLocal(){
-    try{
-      // read settings
-      const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
-      if(!p.owner || !p.repo || !p.path){
-        alert('Missing settings (owner/repo/path). Open Cloud sync and fill them in.');
+  function writeDataLocally(obj){
+    try {
+      if (typeof window.applyImportedData === 'function') {
+        window.applyImportedData(obj);
         return;
       }
-      const branch = p.branch || 'main';
-      const url = `https://api.github.com/repos/${encodeURIComponent(p.owner)}/${encodeURIComponent(p.repo)}/contents/${p.path}?ref=${encodeURIComponent(branch)}`;
-      const headers = { 'Accept':'application/vnd.github+json' };
-      if(p.token) headers['Authorization'] = 'token ' + p.token;
-
-      const res = await fetch(url, { headers });
-      if(!res.ok){
-        throw new Error('GitHub GET failed: ' + res.status);
-      }
-      const j = await res.json();
-      // content is base64-encoded
-      let text = '';
-      if(j && j.content){
-        try{
-          const b64 = j.content.replace(/\n/g,'');
-          text = atob(b64);
-        }catch(_){
-          // fallback: if encoding is not base64 or content missing
-          if(typeof j === 'string') text = j;
-        }
-      }else if(typeof j === 'string'){
-        text = j;
-      }else{
-        // try raw fetch of the file via raw.githubusercontent fallback
-        const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(p.owner)}/${encodeURIComponent(p.repo)}/${encodeURIComponent(branch)}/${p.path}`;
-        const rawRes = await fetch(rawUrl, { headers: p.token ? { 'Authorization':'token '+p.token } : undefined });
-        if(!rawRes.ok) throw new Error('Raw download failed: ' + rawRes.status);
-        text = await rawRes.text();
-      }
-
-      if(!text) throw new Error('Empty file received.');
-
-      // Write JSON to localStorage key used by the app
-      localStorage.setItem('hourlogger.data', text);
-
-      // Clear Cache Storage to delete cached assets
-      if('caches' in window){
-        try{
-          const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
-        }catch(e){
-          console.warn('Cache deletion warning:', e);
-        }
-      }
-
-      // Optionally unregister service workers for a full refresh
-      if('serviceWorker' in navigator){
-        try{
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }catch(e){
-          console.warn('SW unregister warning:', e);
-        }
-      }
-
-      // Reload UI after data is present
-      location.reload();
-    }catch(e){
-      console.error(e);
-      alert('Load failed: ' + e.message);
-    }
+      const candidates = ['hourLogger.data','loggedData','hour-logger-data','app.data'];
+      const key = candidates.find(k => LS.getItem(k) !== null) || candidates[0];
+      LS.setItem(key, JSON.stringify(obj));
+    } catch(e){ console.error('Failed to store data', e); throw e; }
   }
 
-  function wireButtons(){
-    const btnSave = q('ghSave');
-    const btnLoad = q('ghLoad');
-    if(btnSave){
-      btnSave.onclick = null;
-      btnSave.addEventListener('click', saveSettingsOnly);
-      btnSave.innerText = 'Save settings';
-      btnSave.title = 'Stores sync settings only (no GitHub push)';
-    }
-    if(btnLoad){
-      btnLoad.onclick = null;
-      btnLoad.addEventListener('click', loadFromGitHubToLocal);
-      btnLoad.title = 'Loads JSON from GitHub, stores locally, clears cache, and reloads';
-    }
+  async function clearAllCaches(){
+    try {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage('clearCaches');
+      }
+      if ('caches' in window) {
+        const ks = await caches.keys();
+        await Promise.all(ks.map(k => caches.delete(k)));
+      }
+    } catch(e){ console.warn('Cache clear warning', e); }
   }
 
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', wireButtons);
-  }else{
-    wireButtons();
+  async function loadFromGitHub(){
+    const owner = LS.getItem(K.owner) || el('gh-owner')?.value?.trim();
+    const repo  = LS.getItem(K.repo)  || el('gh-repo')?.value?.trim();
+    const branch= LS.getItem(K.branch)|| el('gh-branch')?.value?.trim() || 'main';
+    const path  = LS.getItem(K.path)  || el('gh-path')?.value?.trim();
+    const token = LS.getItem(K.token) || el('gh-token')?.value?.trim() || '';
+
+    if (!owner || !repo || !path){ alert('Missing owner/repo/path. Save settings first.'); return; }
+
+    const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+    const headers = token ? { Authorization: `token ${token}` } : {};
+    let data;
+    try {
+      const res = await fetch(url, { headers, cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+      data = await res.json();
+    } catch(e){
+      console.error('Load failed', e);
+      alert('Failed to load JSON from GitHub. Check repo/branch/path and token if private.');
+      return;
+    }
+
+    await clearAllCaches(); // delete cache memory
+    writeDataLocally(data); // write JSON locally
+    setTimeout(() => location.reload(), 150); // auto-reload
   }
+
+  // expose
+  window.cloudSync = { saveCloudSettings, loadFromGitHub };
+
+  // wire to buttons if present
+  const saveBtn = document.querySelector('[data-action="save-cloud-settings"]') || document.getElementById('btnSaveCloudSettings');
+  if (saveBtn) saveBtn.addEventListener('click', e => { e.preventDefault(); saveCloudSettings(); });
+
+  const loadBtn = document.querySelector('[data-action="load-from-github"]') || document.getElementById('btnLoadFromGitHub');
+  if (loadBtn) loadBtn.addEventListener('click', e => { e.preventDefault(); loadFromGitHub(); });
+
+  // mark version for debugging
+  document.documentElement.setAttribute('data-app-version', 'v62');
 })();
 </script>
 
