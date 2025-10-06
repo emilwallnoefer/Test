@@ -203,7 +203,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 56</div>
+    <div class="version version-menu">Hour Logger 60</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -241,7 +241,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 56</div>
+    <div class="version">Hour Logger 60</div>
   </section>
 
   <!-- LOGGER -->
@@ -271,7 +271,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 56</div>
+    <div class="version">Hour Logger 60</div>
   </section>
 
   <!-- Focus bubble -->
@@ -300,7 +300,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "56";
+    const APP_VERSION = "60";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -692,8 +692,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 
   async function doLoad(){
   try{
-    const getPrefs = ()=>{ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } };
-    const p=getPrefs(); if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token');
+    const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
+    if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token');
     const meta=await ghGetFile(p);
     if(!meta){ alert('File not found (save once first).'); return; }
     const raw=atob(meta.content.replace(/
@@ -705,16 +705,65 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       window.state=obj;
     }
     if (typeof toast==='function') toast('Loaded from GitHub');
-  }catch(e){ console.error(e); alert('Load failed: ' + e.message); return; }
+  }catch(e){ console.error(e); alert('Load failed: '+e.message); return; }
   const panel=document.getElementById('syncPanel'); if(panel) panel.style.display='none';
   setTimeout(()=>location.reload(), 120);
-} const raw=atob(meta.content.replace(/\n/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; renderMenu&&renderMenu(); renderWeek&&renderWeek(); toast&&toast('Loaded from GitHub'); } }catch(e){ console.error(e); alert('Load failed: '+e.message); } }
+}
+ const raw=atob(meta.content.replace(/\n/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; renderMenu&&renderMenu(); renderWeek&&renderWeek(); toast&&toast('Loaded from GitHub'); } }catch(e){ console.error(e); alert('Load failed: '+e.message); } }
   async function doSave(){
   try{
-    // Save settings only; no data push
-    const p = (function(){
-      try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; }
-    })();
+    const owner=document.getElementById('ghOwner')?.value.trim()||'';
+    const repo=document.getElementById('ghRepo')?.value.trim()||'';
+    const branch=document.getElementById('ghBranch')?.value.trim()||'main';
+    const path=document.getElementById('ghPath')?.value.trim()||'data/hourlogger-data.json';
+    const token=document.getElementById('ghToken')?.value.trim()||'';
+    localStorage.setItem('hourlogger.sync', JSON.stringify({owner,repo,branch,path,token}));
+    if (typeof toast==='function') toast('Cloud settings saved');
+    const panel=document.getElementById('syncPanel'); if(panel) panel.style.display='none';
+  }catch(e){ console.error(e); alert('Save failed: '+e.message); }
+}
+); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); toast&&toast('Saved to GitHub'); hidePanel(); }catch(e){ console.error(e); alert('Save failed: '+e.message); } }
+  async function saveSilently(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) return; const content=localStorage.getItem('hourlogger.data') || JSON.stringify(state||{}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); }catch(_e){} }
+
+  async function loadSilently(){
+    try{
+      const p=getPrefs(); if(!p.token||!p.owner||!p.repo) return false;
+      const meta=await ghGetFile(p); if(!meta) return false;
+      const raw=atob(meta.content.replace(/\n/g,''));
+      const obj=JSON.parse(raw);
+      if(obj && typeof obj==='object'){
+        if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={};
+        localStorage.setItem('hourlogger.data', JSON.stringify(obj));
+        window.state=obj;
+        return true;
+      }
+      return false;
+    }catch(_e){ return false; }
+  }
+
+
+  if(btnL) btnL.addEventListener('click', doLoad);
+  if(btnS) btnS.addEventListener('click', doSave);
+
+  window.hourloggerCloud = { save: doSave, saveSilently: saveSilently, loadSilently: loadSilently, auto: true };
+
+      // Auto-load from GitHub on startup (silent, once per page load)
+      (async function(){
+        try{
+          const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
+          if(p && p.token && p.owner && p.repo){
+            if(!sessionStorage.getItem('hourlogger.autoload60')){
+              sessionStorage.setItem('hourlogger.autoload60','1');
+              const ok = await loadSilently();
+              if(ok){
+                try { if (typeof renderMenu==='function') renderMenu(); if (typeof renderWeek==='function') renderWeek(); } catch(_){}
+              }
+            }
+          }
+        }catch(_){}
+      })();
+    
+})();
   </script>
 </body>
 </html>
