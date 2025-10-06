@@ -174,6 +174,66 @@ html, body { overflow-x: hidden; }
 
 </style>
 </head>
+  <script>
+/* Hour Logger — auto-load from GitHub on boot + auto-push on save */
+(function(){
+  const STORE_KEY = window.STORE_KEY || 'hourlogger.data';
+
+  // Ensure durable storage (less chance of eviction)
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(e){}
+
+  // Patch save(): keep original, then auto-push silently if configured
+  const __origSave = typeof window.save === 'function' ? window.save : null;
+  window.save = function(){
+    try {
+      if (__origSave) { __origSave(); }
+      else { localStorage.setItem(STORE_KEY, JSON.stringify(window.state||{})); }
+    } catch(e){}
+    try {
+      if (window.hourloggerCloud && window.hourloggerCloud.auto && typeof window.hourloggerCloud.saveSilently === 'function') {
+        window.hourloggerCloud.saveSilently();
+      }
+    } catch(e){}
+    try { document.dispatchEvent(new CustomEvent('hourlogger:saved')); } catch(e){}
+  };
+
+  // Auto-pull from GitHub on boot (silent). Uses stored prefs from Cloud sync panel.
+  async function loadSilently(){
+    try{
+      const p = JSON.parse(localStorage.getItem('hourlogger.sync')||'{}');
+      if(!p || !p.token || !p.owner || !p.repo) return; // not configured
+      const url = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}?ref=${encodeURIComponent(p.branch||'main')}`;
+      const r = await fetch(url, { headers: { 'Authorization':'token '+p.token, 'Accept':'application/vnd.github+json' } });
+      if(!r.ok) return; // missing file / offline / blocked -> skip quietly
+      const meta = await r.json();
+      const raw  = atob((meta.content||'').replace(/\n/g,''));
+      const obj  = JSON.parse(raw);
+      if(obj && typeof obj==='object'){
+        if(!obj.work) obj.work={};
+        if(!obj.comp) obj.comp={};
+        localStorage.setItem(STORE_KEY, JSON.stringify(obj));
+        window.state = obj;
+        try { if (typeof renderMenu==='function') renderMenu(); } catch(_){}
+        try { if (typeof renderWeek==='function') renderWeek(); } catch(_){}
+      }
+    }catch(_e){ /* stay silent on boot */ }
+  }
+
+  // Expose for other code (optional)
+  window.hourloggerCloud = Object.assign({}, window.hourloggerCloud, {
+    loadSilently,
+    auto: true,
+    autoLoadOnBoot: true
+  });
+
+  // Boot: load from GitHub once DOM is ready
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(loadSilently, 0);
+  } else {
+    window.addEventListener('DOMContentLoaded', loadSilently);
+  }
+})();
+</script>
 <body>
   <div class="toast-wrap"><div id="toast" class="toast">Saved</div></div>
   <canvas id="fxCanvas"></canvas>
