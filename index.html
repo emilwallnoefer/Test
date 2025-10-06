@@ -219,7 +219,7 @@ html, body { overflow-x: hidden; }
         <input id="ghToken" type="password" placeholder="Personal Access Token (repo: read/write)"/>
         <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap">
           <button class="btn small" id="ghLoad">Load from GitHub</button>
-          <button class="btn small primary" id="ghSave">Save</button>
+          <button class="btn small primary" id="ghSave">Save to GitHub</button>
         </div>
         <p style="font-size:12px; color:var(--muted); margin:4px 0 0">Token is stored only on this device. The JSON stays in GitHub.</p>
       </div>
@@ -707,8 +707,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 } const raw=atob(meta.content.replace(/\n/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; renderMenu&&renderMenu(); renderWeek&&renderWeek(); toast&&toast('Loaded from GitHub'); } }catch(e){ console.error(e); alert('Load failed: '+e.message); } }
   async function doSave(){
   try{
-    // Save ONLY sync settings; do not push logged data here
-    const payload={owner:ghOwner?.value.trim(),repo:ghRepo?.value.trim(),branch:(ghBranch?.value.trim()||'main'),path:(ghPath?.value.trim()||'data/hourlogger-data.json'),token:ghToken?.value.trim()};
+    // Save only the sync settings (owner/repo/branch/path/token); do not push data
+    const payload={owner:owner?.value.trim(),repo:repo?.value.trim(),branch:(branch?.value.trim()||'main'),path:(pathI?.value.trim()||'data/hourlogger-data.json'),token:token?.value.trim()};
     localStorage.setItem('hourlogger.sync', JSON.stringify(payload));
     toast&&toast('Cloud settings saved');
     hidePanel();
@@ -743,8 +743,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
         try{
           const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
           if(p && p.token && p.owner && p.repo){
-            if(!sessionStorage.getItem('hourlogger.autoload55')){
-              sessionStorage.setItem('hourlogger.autoload55','1');
+            if(!sessionStorage.getItem('hourlogger.autoload53')){
+              sessionStorage.setItem('hourlogger.autoload53','1');
               const ok = await loadSilently();
               if(ok){
                 try { if (typeof renderMenu==='function') renderMenu(); if (typeof renderWeek==='function') renderWeek(); } catch(_){}
