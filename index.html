@@ -668,31 +668,95 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
   const backdrop= document.getElementById('syncBackdrop');
   const $ = id => document.getElementById(id);
 
-  const owner=$('ghOwner'), repo=$('ghRepo'), branch=$('ghBranch'), pathI=$('ghPath'), token=$('ghToken');
-  const btnL=$('ghLoad'), btnS=$('ghSave');
+  const owner = $('ghOwner'), repo = $('ghRepo'), branch = $('ghBranch'), pathI = $('ghPath'), token = $('ghToken');
+  const btnL  = $('ghLoad'),  btnS  = $('ghSave');
 
   function loadPrefs(){
     const p = JSON.parse(localStorage.getItem('hourlogger.sync')||'{}');
-    if(owner) owner.value=p.owner||''; if(repo) repo.value=p.repo||''; if(branch) branch.value=p.branch||'';
-    if(pathI) pathI.value=p.path||'data/hourlogger-data.json'; if(token) token.value=p.token||'';
+    if (owner)  owner.value  = p.owner  || '';
+    if (repo)   repo.value   = p.repo   || '';
+    if (branch) branch.value = p.branch || 'main';
+    if (pathI)  pathI.value  = p.path   || 'data/hourlogger-data.json';
+    if (token)  token.value  = p.token  || '';
   }
   function savePrefs(){
-    const payload={owner:owner?.value.trim(),repo:repo?.value.trim(),branch:(branch?.value.trim()||'main'),path:(pathI?.value.trim()||'data/hourlogger-data.json'),token:token?.value.trim()};
+    const payload = {
+      owner:  owner?.value.trim(),
+      repo:   repo?.value.trim(),
+      branch: (branch?.value.trim()||'main'),
+      path:   (pathI?.value.trim()||'data/hourlogger-data.json'),
+      token:  token?.value.trim()
+    };
     localStorage.setItem('hourlogger.sync', JSON.stringify(payload));
   }
-  function showPanel(){ loadPrefs(); if(panel) panel.style.display='block'; }
-  function hidePanel(){ if(panel) panel.style.display='none'; savePrefs(); }
-  if(openBtn) openBtn.addEventListener('click', showPanel);
-  if(backdrop) backdrop.addEventListener('click', hidePanel);
+  function getPrefs(){
+    try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); }
+    catch(_) { return {}; }
+  }
 
-  function getPrefs(){ const p = JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); return { owner:p.owner||'', repo:p.repo||'', branch:p.branch||'main', path:p.path||'data/hourlogger-data.json', token:p.token||'' }; }
-  async function ghHeaders(t){ return { 'Authorization':'token '+t, 'Accept':'application/vnd.github+json' }; }
-  async function ghGetFile(p){ const url=`https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}?ref=${encodeURIComponent(p.branch)}`; const r=await fetch(url,{headers:await ghHeaders(p.token)}); if(r.status===404) return null; if(!r.ok) throw new Error('GitHub GET failed: '+r.status); return await r.json(); }
-  async function ghPutFile(p, content, sha){ const url=`https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}`; const body={message:'Hour Logger sync',content:btoa(unescape(encodeURIComponent(content))),branch:p.branch}; if(sha) body.sha=sha; const r=await fetch(url,{method:'PUT',headers:await ghHeaders(p.token),body:JSON.stringify(body)}); if(!r.ok) throw new Error('GitHub PUT failed: '+r.status); return await r.json(); }
+  async function ghGetFile(p){
+    const url = `https://api.github.com/repos/${encodeURIComponent(p.owner)}/${encodeURIComponent(p.repo)}/contents/${p.path}?ref=${encodeURIComponent(p.branch||'main')}`;
+    const res = await fetch(url, { headers: { 'Authorization': p.token ? `token ${p.token}` : undefined } });
+    if (res.status === 200) return await res.json();
+    return null;
+  }
+  async function ghPutFile(p, content, sha){
+    const url = `https://api.github.com/repos/${encodeURIComponent(p.owner)}/${encodeURIComponent(p.repo)}/contents/${p.path}`;
+    const body = {
+      message: 'hourlogger: update data',
+      content: btoa(unescape(encodeURIComponent(content))),
+      branch: p.branch || 'main'
+    };
+    if (sha) body.sha = sha;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': p.token ? `token ${p.token}` : undefined
+      },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('GitHub save failed');
+    return await res.json();
+  }
 
+  // Save settings only (no data push)
+  async function doSave(){
+  try{
+    // Save settings only; no data push
+    function savePrefs(){
+      const owner=document.getElementById('ghOwner')?.value.trim()||'';
+      const repo=document.getElementById('ghRepo')?.value.trim()||'';
+      const branch=document.getElementById('ghBranch')?.value.trim()||'main';
+      const path=document.getElementById('ghPath')?.value.trim()||'data/hourlogger-data.json';
+      const token=document.getElementById('ghToken')?.value.trim()||'';
+      localStorage.setItem('hourlogger.sync', JSON.stringify({owner,repo,branch,path,token}));
+    }
+    savePrefs();
+    if(typeof toast==='function') toast('Cloud settings saved');
+    const panel=document.getElementById('syncPanel'); if(panel) panel.style.display='none';
+  }catch(e){ console.error(e); alert('Save failed: '+e.message); }
+}catch(e){
+      console.error(e);
+      alert('Save failed: ' + e.message);
+    }
+  }
+
+  // Save logged data silently (used by app save())
+  async function saveSilently(){
+    try{
+      const p = getPrefs();
+      if (!p.token || !p.owner || !p.repo) return;
+      const content = localStorage.getItem('hourlogger.data') || JSON.stringify(window.state||{});
+      const meta = await ghGetFile(p);
+      await ghPutFile(p, content, meta && meta.sha);
+    }catch(_e){}
+  }
+
+  // Load from GitHub into local storage
   async function doLoad(){
   try{
-    const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
+    const p=(function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
     if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token');
     const meta=await ghGetFile(p);
     if(!meta){ alert('File not found (save once first).'); return; }
@@ -704,66 +768,55 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       localStorage.setItem('hourlogger.data', JSON.stringify(obj));
       window.state=obj;
     }
-    if (typeof toast==='function') toast('Loaded from GitHub');
+    if(typeof toast==='function') toast('Loaded from GitHub');
   }catch(e){ console.error(e); alert('Load failed: '+e.message); return; }
   const panel=document.getElementById('syncPanel'); if(panel) panel.style.display='none';
   setTimeout(()=>location.reload(), 120);
 }
- const raw=atob(meta.content.replace(/\n/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; renderMenu&&renderMenu(); renderWeek&&renderWeek(); toast&&toast('Loaded from GitHub'); } }catch(e){ console.error(e); alert('Load failed: '+e.message); } }
-  async function doSave(){
-  try{
-    const owner=document.getElementById('ghOwner')?.value.trim()||'';
-    const repo=document.getElementById('ghRepo')?.value.trim()||'';
-    const branch=document.getElementById('ghBranch')?.value.trim()||'main';
-    const path=document.getElementById('ghPath')?.value.trim()||'data/hourlogger-data.json';
-    const token=document.getElementById('ghToken')?.value.trim()||'';
-    localStorage.setItem('hourlogger.sync', JSON.stringify({owner,repo,branch,path,token}));
-    if (typeof toast==='function') toast('Cloud settings saved');
-    const panel=document.getElementById('syncPanel'); if(panel) panel.style.display='none';
-  }catch(e){ console.error(e); alert('Save failed: '+e.message); }
-}
-); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); toast&&toast('Saved to GitHub'); hidePanel(); }catch(e){ console.error(e); alert('Save failed: '+e.message); } }
-  async function saveSilently(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) return; const content=localStorage.getItem('hourlogger.data') || JSON.stringify(state||{}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); }catch(_e){} }
-
-  async function loadSilently(){
-    try{
-      const p=getPrefs(); if(!p.token||!p.owner||!p.repo) return false;
-      const meta=await ghGetFile(p); if(!meta) return false;
-      const raw=atob(meta.content.replace(/\n/g,''));
-      const obj=JSON.parse(raw);
-      if(obj && typeof obj==='object'){
-        if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={};
+      const raw = atob(meta.content.replace(/\n/g,''));
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === 'object'){
+        if (!obj.work) obj.work = {};
+        if (!obj.comp) obj.comp = {};
         localStorage.setItem('hourlogger.data', JSON.stringify(obj));
-        window.state=obj;
-        return true;
+        window.state = obj;
+        if (typeof renderMenu==='function') renderMenu();
+        if (typeof renderWeek==='function') renderWeek();
+        if (typeof toast==='function') toast('Loaded from GitHub');
       }
-      return false;
-    }catch(_e){ return false; }
+    }catch(e){
+      console.error(e);
+      alert('Load failed: ' + e.message);
+      return;
+    }
+    if (panel) panel.style.display = 'none';
+    setTimeout(()=>location.reload(), 120);
   }
 
+  function showPanel(){ loadPrefs(); if(panel) panel.style.display='block'; }
+  function hidePanel(){ if(panel) panel.style.display='none'; savePrefs(); }
 
-  if(btnL) btnL.addEventListener('click', doLoad);
-  if(btnS) btnS.addEventListener('click', doSave);
+  if (openBtn)   openBtn.addEventListener('click', showPanel);
+  if (backdrop)  backdrop.addEventListener('click', hidePanel);
+  if (btnS)      btnS.addEventListener('click', doSave);
+  if (btnL)      btnL.addEventListener('click', doLoad);
 
-  window.hourloggerCloud = { save: doSave, saveSilently: saveSilently, loadSilently: loadSilently, auto: true };
+  // Expose hooks for autosave/autoload
+  window.hourloggerCloud = { save: doSave, saveSilently: saveSilently, loadSilently: doLoad, auto: true };
 
-      // Auto-load from GitHub on startup (silent, once per page load)
-      (async function(){
-        try{
-          const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
-          if(p && p.token && p.owner && p.repo){
-            if(!sessionStorage.getItem('hourlogger.autoload60')){
-              sessionStorage.setItem('hourlogger.autoload60','1');
-              const ok = await loadSilently();
-              if(ok){
-                try { if (typeof renderMenu==='function') renderMenu(); if (typeof renderWeek==='function') renderWeek(); } catch(_){}
-              }
-            }
-          }
-        }catch(_){}
-      })();
-    
-})();
-  </script>
+  // Auto-load once per page load if configured
+  (async function(){
+    try{
+      const p = getPrefs();
+      if (p && p.token && p.owner && p.repo){
+        if (!sessionStorage.getItem('hourlogger.autoload55')){
+          sessionStorage.setItem('hourlogger.autoload55','1');
+          try { await doLoad(); } catch(_){}
+        }
+      }
+    }catch(_){}
+  })();
+
+})();</script>
 </body>
 </html>
