@@ -185,6 +185,7 @@ html, body { overflow-x: hidden; }
     <div class="menu-dd" id="menuDD">
       <button class="btn small" id="mLight">Light</button>
       <button class="btn small" id="mDark">Dark</button>
+      <button class="btn small" id="mSync">Cloud sync…</button>
     </div>
   </div>
 
@@ -202,8 +203,29 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 51</div>
+    <div class="version version-menu">Hour Logger 52</div>
   </section>
+
+  <!-- Cloud Sync Panel -->
+  <div id="syncPanel" style="display:none; position:fixed; inset:0; z-index:70;">
+    <div id="syncBackdrop" style="position:absolute; inset:0; background:#0007; backdrop-filter:blur(10px)"></div>
+    <div style="position:fixed; left:16px; right:16px; top:calc(env(safe-area-inset-top,0px) + 64px); background:var(--card); border:1px solid var(--stroke); border-radius:14px; padding:14px; box-shadow:0 24px 80px #0008;">
+      <div style="font-weight:800; margin-bottom:8px;">Cloud sync (GitHub)</div>
+      <div style="display:grid; gap:8px;">
+        <input id="ghOwner" type="text" placeholder="GitHub owner (username/org)" />
+        <input id="ghRepo" type="text" placeholder="Repository name" />
+        <input id="ghBranch" type="text" placeholder="Branch (main)" />
+        <input id="ghPath" type="text" placeholder="File path (e.g., data/hourlogger-data.json)" />
+        <input id="ghToken" type="password" placeholder="Personal Access Token (repo: read/write)"/>
+        <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap">
+          <button class="btn small" id="ghLoad">Load from GitHub</button>
+          <button class="btn small primary" id="ghSave">Save to GitHub</button>
+        </div>
+        <p style="font-size:12px; color:var(--muted); margin:4px 0 0">Token is stored only on this device. The JSON stays in GitHub.</p>
+      </div>
+    </div>
+  </div>
+
 
   <!-- CALENDAR -->
   <section id="view-calendar" class="view fx-top"><div class="page-wrap">
@@ -219,7 +241,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 51</div>
+    <div class="version">Hour Logger 52</div>
   </section>
 
   <!-- LOGGER -->
@@ -249,7 +271,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 51</div>
+    <div class="version">Hour Logger 52</div>
   </section>
 
   <!-- Focus bubble -->
@@ -278,7 +300,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "51";
+    const APP_VERSION = "52";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -299,9 +321,30 @@ html, body { overflow-x: hidden; }
     mDark .addEventListener('click', ()=>{ setTheme('dark');  menuDD.classList.remove('show'); });
 
     // Constants & state
-    const TARGET=504, KEY='hourlogger.51';
-    const state=JSON.parse(localStorage.getItem(KEY)||'{}'); if(!state.work) state.work={}; if(!state.comp) state.comp={};
-    const save=()=>localStorage.setItem(KEY, JSON.stringify(state));
+    const TARGET=504, STORE_KEY='hourlogger.data'; const KEY=STORE_KEY;
+// Load + migrate from old hourlogger.NN
+function loadState(){
+  const raw = localStorage.getItem(STORE_KEY);
+  if(raw){ try{ const o=JSON.parse(raw); if(o && typeof o==='object') return o; }catch(e){} }
+  let best=null, bestVer=-1;
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i)||''; const m=/^hourlogger\.(\d+)$/.exec(k);
+    if(m){ const v=parseInt(m[1],10);
+      try{ const o=JSON.parse(localStorage.getItem(k)); if(o && typeof o==='object' && v>bestVer){ best=o; bestVer=v; } }catch(e){}
+    }
+  }
+  if(best){ localStorage.setItem(STORE_KEY, JSON.stringify(best)); return best; }
+  return { work:{}, comp:{} };
+}
+const state = loadState(); if(!state.work) state.work={}; if(!state.comp) state.comp={};
+function save(){
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  try{ document.dispatchEvent(new CustomEvent('hourlogger:saved')); }catch(_){}
+  try{ if(window.hourloggerCloud && window.hourloggerCloud.auto && typeof window.hourloggerCloud.saveSilently==='function'){ window.hourloggerCloud.saveSilently(); } }catch(_){}
+}
+// ask browser to persist storage (reduces eviction)
+if(navigator.storage && navigator.storage.persist){ navigator.storage.persist(); }
+
     const pad=n=>String(n).padStart(2,'0');
     const toDateStr=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
     const startOfWeekMon=d=>{const x=new Date(d);const wd=(x.getDay()+6)%7;x.setDate(x.getDate()-wd);x.setHours(0,0,0,0);return x};
@@ -617,6 +660,45 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       if(btn){ btn.addEventListener('click', saveDay); }
     })();
     
+
+// --- Cloud Sync (GitHub Contents API) ---
+(function(){
+  const openBtn = document.getElementById('mSync');
+  const panel   = document.getElementById('syncPanel');
+  const backdrop= document.getElementById('syncBackdrop');
+  const $ = id => document.getElementById(id);
+
+  const owner=$('ghOwner'), repo=$('ghRepo'), branch=$('ghBranch'), pathI=$('ghPath'), token=$('ghToken');
+  const btnL=$('ghLoad'), btnS=$('ghSave');
+
+  function loadPrefs(){
+    const p = JSON.parse(localStorage.getItem('hourlogger.sync')||'{}');
+    if(owner) owner.value=p.owner||''; if(repo) repo.value=p.repo||''; if(branch) branch.value=p.branch||'';
+    if(pathI) pathI.value=p.path||'data/hourlogger-data.json'; if(token) token.value=p.token||'';
+  }
+  function savePrefs(){
+    const payload={owner:owner?.value.trim(),repo:repo?.value.trim(),branch:(branch?.value.trim()||'main'),path:(pathI?.value.trim()||'data/hourlogger-data.json'),token:token?.value.trim()};
+    localStorage.setItem('hourlogger.sync', JSON.stringify(payload));
+  }
+  function showPanel(){ loadPrefs(); if(panel) panel.style.display='block'; }
+  function hidePanel(){ if(panel) panel.style.display='none'; savePrefs(); }
+  if(openBtn) openBtn.addEventListener('click', showPanel);
+  if(backdrop) backdrop.addEventListener('click', hidePanel);
+
+  function getPrefs(){ const p = JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); return { owner:p.owner||'', repo:p.repo||'', branch:p.branch||'main', path:p.path||'data/hourlogger-data.json', token:p.token||'' }; }
+  async function ghHeaders(t){ return { 'Authorization':'token '+t, 'Accept':'application/vnd.github+json' }; }
+  async function ghGetFile(p){ const url=`https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}?ref=${encodeURIComponent(p.branch)}`; const r=await fetch(url,{headers:await ghHeaders(p.token)}); if(r.status===404) return null; if(!r.ok) throw new Error('GitHub GET failed: '+r.status); return await r.json(); }
+  async function ghPutFile(p, content, sha){ const url=`https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}`; const body={message:'Hour Logger sync',content:btoa(unescape(encodeURIComponent(content))),branch:p.branch}; if(sha) body.sha=sha; const r=await fetch(url,{method:'PUT',headers:await ghHeaders(p.token),body:JSON.stringify(body)}); if(!r.ok) throw new Error('GitHub PUT failed: '+r.status); return await r.json(); }
+
+  async function doLoad(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token'); const meta=await ghGetFile(p); if(!meta){ alert('File not found (save once first).'); return; } const raw=atob(meta.content.replace(/\n/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; renderMenu&&renderMenu(); renderWeek&&renderWeek(); toast&&toast('Loaded from GitHub'); } }catch(e){ console.error(e); alert('Load failed: '+e.message); } }
+  async function doSave(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token'); const content=localStorage.getItem('hourlogger.data') || JSON.stringify(state||{}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); toast&&toast('Saved to GitHub'); hidePanel(); }catch(e){ console.error(e); alert('Save failed: '+e.message); } }
+  async function saveSilently(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) return; const content=localStorage.getItem('hourlogger.data') || JSON.stringify(state||{}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); }catch(_e){} }
+
+  if(btnL) btnL.addEventListener('click', doLoad);
+  if(btnS) btnS.addEventListener('click', doSave);
+
+  window.hourloggerCloud = { save: doSave, saveSilently: saveSilently, auto: true };
+})();
   </script>
 </body>
 </html>
