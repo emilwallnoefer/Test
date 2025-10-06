@@ -721,8 +721,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
         try{
           const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
           if(p && p.token && p.owner && p.repo){
-            if(!sessionStorage.getItem('hourlogger.autoload53')){
-              sessionStorage.setItem('hourlogger.autoload53','1');
+            if(!sessionStorage.getItem('hourlogger.autoload62')){
+              sessionStorage.setItem('hourlogger.autoload62','1');
               const ok = await loadSilently();
               if(ok){
                 try { if (typeof renderMenu==='function') renderMenu(); if (typeof renderWeek==='function') renderWeek(); } catch(_){}
@@ -735,91 +735,67 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 })();
   </script>
 
-<!-- Cloud Sync v62 -->
+<!-- v62 overrides -->
 <script>
 (() => {
-  const LS = window.localStorage;
-  const K = { owner:'gh.owner', repo:'gh.repo', branch:'gh.branch', path:'gh.path', token:'gh.token' };
-
-  function el(id){ return document.getElementById(id); }
-
-  async function saveCloudSettings(){
-    const owner = el('gh-owner')?.value?.trim() ?? LS.getItem(K.owner) ?? '';
-    const repo  = el('gh-repo')?.value?.trim()  ?? LS.getItem(K.repo)  ?? '';
-    const branch= el('gh-branch')?.value?.trim()?? LS.getItem(K.branch)?? 'main';
-    const path  = el('gh-path')?.value?.trim()  ?? LS.getItem(K.path)  ?? '';
-    const token = el('gh-token')?.value?.trim() ?? LS.getItem(K.token) ?? '';
-    LS.setItem(K.owner, owner);
-    LS.setItem(K.repo, repo);
-    LS.setItem(K.branch, branch || 'main');
-    LS.setItem(K.path, path);
-    if (token) LS.setItem(K.token, token);
-    if (window.toast) window.toast('Cloud sync settings saved (no data push).');
+  const LS=localStorage;
+  function id(x){ return document.getElementById(x); }
+  function getPrefs(){
+    const owner = (id('gh-owner')?.value || LS.getItem('gh.owner') || '').trim();
+    const repo  = (id('gh-repo')?.value  || LS.getItem('gh.repo')  || '').trim();
+    const branch= (id('gh-branch')?.value|| LS.getItem('gh.branch')|| 'main').trim();
+    const path  = (id('gh-path')?.value  || LS.getItem('gh.path')  || '').trim();
+    const token = (id('gh-token')?.value || LS.getItem('gh.token') || '').trim();
+    return { owner, repo, branch, path, token };
   }
+  // Save settings only (no data push)
+  window.doSave = function(){
+    const p=getPrefs();
+    if(!p.owner || !p.repo || !p.path){
+      alert('Please fill owner, repo and path.'); return;
+    }
+    LS.setItem('gh.owner', p.owner);
+    LS.setItem('gh.repo', p.repo);
+    LS.setItem('gh.branch', p.branch || 'main');
+    LS.setItem('gh.path', p.path);
+    if (p.token) LS.setItem('gh.token', p.token);
+    if (window.toast) window.toast('Cloud sync settings saved (no push).');
+  };
 
-  function writeDataLocally(obj){
-    try {
-      if (typeof window.applyImportedData === 'function') {
-        window.applyImportedData(obj);
-        return;
-      }
-      const candidates = ['hourLogger.data','loggedData','hour-logger-data','app.data'];
-      const key = candidates.find(k => LS.getItem(k) !== null) || candidates[0];
-      LS.setItem(key, JSON.stringify(obj));
-    } catch(e){ console.error('Failed to store data', e); throw e; }
-  }
-
-  async function clearAllCaches(){
-    try {
-      if (navigator.serviceWorker?.controller) {
+  async function clearCaches(){
+    try{
+      if(navigator.serviceWorker?.controller){
         navigator.serviceWorker.controller.postMessage('clearCaches');
       }
-      if ('caches' in window) {
-        const ks = await caches.keys();
-        await Promise.all(ks.map(k => caches.delete(k)));
+      if('caches' in window){
+        const ks=await caches.keys();
+        await Promise.all(ks.map(k=>caches.delete(k)));
       }
-    } catch(e){ console.warn('Cache clear warning', e); }
+    }catch(_){}
   }
 
-  async function loadFromGitHub(){
-    const owner = LS.getItem(K.owner) || el('gh-owner')?.value?.trim();
-    const repo  = LS.getItem(K.repo)  || el('gh-repo')?.value?.trim();
-    const branch= LS.getItem(K.branch)|| el('gh-branch')?.value?.trim() || 'main';
-    const path  = LS.getItem(K.path)  || el('gh-path')?.value?.trim();
-    const token = LS.getItem(K.token) || el('gh-token')?.value?.trim() || '';
-
-    if (!owner || !repo || !path){ alert('Missing owner/repo/path. Save settings first.'); return; }
-
-    const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
-    const headers = token ? { Authorization: `token ${token}` } : {};
-    let data;
-    try {
-      const res = await fetch(url, { headers, cache: 'no-store' });
-      if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
-      data = await res.json();
-    } catch(e){
-      console.error('Load failed', e);
-      alert('Failed to load JSON from GitHub. Check repo/branch/path and token if private.');
-      return;
+  window.doLoad = async function(){
+    const p=getPrefs();
+    if(!p.owner || !p.repo || !p.path){ alert('Missing owner/repo/path'); return; }
+    const url = `https://raw.githubusercontent.com/${p.owner}/${p.repo}/${p.branch}/${p.path}`;
+    try{
+      const res = await fetch(url, { cache:'no-store', headers: p.token ? { Authorization: `token ${p.token}` } : {} });
+      if(!res.ok) throw new Error(res.status);
+      const data = await res.json();
+      localStorage.setItem('hourlogger.data', JSON.stringify(data));
+      await clearCaches();
+      setTimeout(()=>location.reload(),150);
+    }catch(e){
+      console.error(e); alert('Load failed. Check repo/branch/path and token if private.');
     }
+  };
 
-    await clearAllCaches(); // delete cache memory
-    writeDataLocally(data); // write JSON locally
-    setTimeout(() => location.reload(), 150); // auto-reload
-  }
+  // Also expose a helper for silent autoloads if app calls it
+  window.loadSilently = async function(){
+    try{ await window.doLoad(); return true; }catch(_){ return false; }
+  };
 
-  // expose
-  window.cloudSync = { saveCloudSettings, loadFromGitHub };
-
-  // wire to buttons if present
-  const saveBtn = document.querySelector('[data-action="save-cloud-settings"]') || document.getElementById('btnSaveCloudSettings');
-  if (saveBtn) saveBtn.addEventListener('click', e => { e.preventDefault(); saveCloudSettings(); });
-
-  const loadBtn = document.querySelector('[data-action="load-from-github"]') || document.getElementById('btnLoadFromGitHub');
-  if (loadBtn) loadBtn.addEventListener('click', e => { e.preventDefault(); loadFromGitHub(); });
-
-  // mark version for debugging
-  document.documentElement.setAttribute('data-app-version', 'v62');
+  document.documentElement.setAttribute('data-app-version','v62');
 })();
 </script>
 

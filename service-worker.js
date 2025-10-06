@@ -1,4 +1,4 @@
-const CACHE='hour-logger-53';
+const CACHE='hour-logger-62';
 const ASSETS=['./','./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))) });
 self.addEventListener('activate',e=>{
@@ -13,13 +13,13 @@ self.addEventListener('message',e=>{
 });
 self.addEventListener('fetch',e=>{ e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))) });
 
-self.addEventListener('message', event => {
-  if (event && event.data === 'clearCaches') {
-    event.waitUntil((async () => {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-      const clients = await self.clients.matchAll();
-      clients.forEach(c => c.postMessage('cachesCleared'));
+self.addEventListener('message',e=>{
+  if(e && e.data==='clearCaches'){
+    e.waitUntil((async()=>{
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+      const clients=await self.clients.matchAll();
+      clients.forEach(c=>c.postMessage('cachesCleared'));
     })());
   }
 });
