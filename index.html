@@ -203,7 +203,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 54</div>
+    <div class="version version-menu">Hour Logger 55</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -241,7 +241,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 54</div>
+    <div class="version">Hour Logger 55</div>
   </section>
 
   <!-- LOGGER -->
@@ -271,7 +271,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 54</div>
+    <div class="version">Hour Logger 55</div>
   </section>
 
   <!-- Focus bubble -->
@@ -300,7 +300,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "54";
+    const APP_VERSION = "55";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -690,9 +690,29 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
   async function ghGetFile(p){ const url=`https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}?ref=${encodeURIComponent(p.branch)}`; const r=await fetch(url,{headers:await ghHeaders(p.token)}); if(r.status===404) return null; if(!r.ok) throw new Error('GitHub GET failed: '+r.status); return await r.json(); }
   async function ghPutFile(p, content, sha){ const url=`https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}`; const body={message:'Hour Logger sync',content:btoa(unescape(encodeURIComponent(content))),branch:p.branch}; if(sha) body.sha=sha; const r=await fetch(url,{method:'PUT',headers:await ghHeaders(p.token),body:JSON.stringify(body)}); if(!r.ok) throw new Error('GitHub PUT failed: '+r.status); return await r.json(); }
 
-  async function doLoad(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token'); const meta=await ghGetFile(p); if(!meta){ alert('File not found (save once first).'); return; } const raw=atob(meta.content.replace(/
-/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; } }catch(e){ console.error(e); alert('Load failed: '+e.message); return; } hidePanel(); setTimeout(()=>location.reload(), 80); } const raw=atob(meta.content.replace(/\n/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; renderMenu&&renderMenu(); renderWeek&&renderWeek(); toast&&toast('Loaded from GitHub'); } }catch(e){ console.error(e); alert('Load failed: '+e.message); } }
-  async function doSave(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token'); const content=localStorage.getItem('hourlogger.data') || JSON.stringify(state||{}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); toast&&toast('Saved to GitHub'); hidePanel(); }catch(e){ console.error(e); alert('Save failed: '+e.message); } }
+  async function doLoad(){
+  try{
+    const p=getPrefs(); if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token');
+    const meta=await ghGetFile(p); if(!meta){ alert('File not found (save once first by editing a day).'); return; }
+    const raw=atob(meta.content.replace(/
+/g,'')); const obj=JSON.parse(raw);
+    if(obj && typeof obj==='object'){
+      if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={};
+      localStorage.setItem('hourlogger.data', JSON.stringify(obj));
+      window.state=obj;
+      toast&&toast('Loaded from GitHub');
+    }
+  }catch(e){ console.error(e); alert('Load failed: '+e.message); return; }
+  hidePanel(); setTimeout(()=>location.reload(), 120);
+} const raw=atob(meta.content.replace(/\n/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; renderMenu&&renderMenu(); renderWeek&&renderWeek(); toast&&toast('Loaded from GitHub'); } }catch(e){ console.error(e); alert('Load failed: '+e.message); } }
+  async function doSave(){
+  try{
+    const payload={owner:ghOwner?.value.trim(),repo:ghRepo?.value.trim(),branch:(ghBranch?.value.trim()||'main'),path:(ghPath?.value.trim()||'data/hourlogger-data.json'),token:ghToken?.value.trim()};
+    localStorage.setItem('hourlogger.sync', JSON.stringify(payload));
+    toast&&toast('Cloud settings saved');
+    hidePanel();
+  }catch(e){ console.error(e); alert('Save failed: '+e.message); }
+}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); toast&&toast('Saved to GitHub'); hidePanel(); }catch(e){ console.error(e); alert('Save failed: '+e.message); } }
   async function saveSilently(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) return; const content=localStorage.getItem('hourlogger.data') || JSON.stringify(state||{}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); }catch(_e){} }
 
   async function loadSilently(){
