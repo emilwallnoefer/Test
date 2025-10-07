@@ -218,7 +218,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 68</div>
+    <div class="version version-menu">Hour Logger 69</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -255,7 +255,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 68</div>
+    <div class="version">Hour Logger 69</div>
   </section>
 
   <!-- LOGGER -->
@@ -285,7 +285,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 68</div>
+    <div class="version">Hour Logger 69</div>
   </section>
 
   <!-- Focus bubble -->
@@ -314,7 +314,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "68";
+    const APP_VERSION = "69";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -382,21 +382,24 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     addEventListener('resize',()=>{resizeFX();initParticles();}); resizeFX(); initParticles(); drawFX();
 
     
-    // Sand + water renderer v68
+    // Sand + water renderer v69 (easing + sequential: sand -> water)
     function SandWater(canvas, worked, compUsed, overtime, opts={}){
       const ctx = canvas.getContext('2d');
       let raf=0, t=0, DPR=1, w=0, h=0;
       const bubblesBottom=[], bubblesTop=[];
-      let intro = 0; // 0..1 sand fill intro progress
-      let startedAt = performance.now();
-      const introDur = 900; // ms: sand first
-      const waterDelay = 250; // ms after sand starts
-      // Options
-      const SEA_GREEN = 'rgba(80,180,120,0.18)';
-      const SEA_RED   = 'rgba(220,60,60,0.12)';
-      const WATER_BASE_TOP = 'rgba(110,180,255,0.55)';
-      const WATER_BASE_BOT = 'rgba(30,90,180,0.75)';
 
+      // Easing helpers
+      const clamp=(x,min=0,max=1)=>Math.max(min,Math.min(max,x));
+      const easeOutCubic = p => 1 - Math.pow(1 - p, 3);
+      const easeInOutCubic = p => (p<.5) ? 4*p*p*p : 1 - Math.pow(-2*p+2,3)/2;
+
+      // Phase timing (ms)
+      const SAND_DUR = 950;
+      const WATER_DUR = 800;
+      let phase = 0; // 0=sand, 1=water, 2=done
+      let phaseStart = performance.now();
+
+      // Sizing
       function size(){
         DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
         const cw = Math.max(1, canvas.clientWidth|0);
@@ -404,12 +407,16 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         w = canvas.width  = Math.floor(cw * DPR);
         h = canvas.height = Math.floor(ch * DPR);
       }
-      function spawn(arr, area, count){ for(let i=0;i<count;i++){ arr.push({ x: area.x + Math.random()*area.w, y: area.y + area.h + Math.random()*10, r: 1 + Math.random()*2, vy: -(0.15+Math.random()*0.35)*DPR, drift:(Math.random()*0.4-0.2)*DPR }); } }
+
+      function spawn(arr, area, count){
+        for(let i=0;i<count;i++){
+          arr.push({ x: area.x + Math.random()*area.w, y: area.y + area.h + Math.random()*10, r: 1 + Math.random()*2, vy: -(0.15+Math.random()*0.35)*DPR, drift:(Math.random()*0.4-0.2)*DPR });
+        }
+      }
       function n1(x,k){ return Math.sin(x*0.012 + t*k); }
       function ridgeY(base,x,amp){ return base + n1(x,1.8)*amp + Math.sin(x*0.045 + t*1.1)*amp*0.35; }
 
       function drawSand(areaY){
-        // Base gradient
         const topY = areaY;
         const grd = ctx.createLinearGradient(0, topY, 0, h);
         grd.addColorStop(0,'#e3d3a9');
@@ -417,7 +424,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         ctx.fillStyle = grd;
         ctx.fillRect(0, topY, w, h-topY);
 
-        // Stipple (small dots like the provided image)
+        // Stipple
         const grains = Math.floor(w*(h-topY)*0.0005);
         for(let i=0;i<grains;i++){
           const nx = Math.random()*w;
@@ -426,13 +433,13 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           ctx.fillStyle = `rgba(120,100,60,${a})`;
           ctx.fillRect(nx,ny,1,1);
         }
-        // Larger speckles
+        // Speckles
         for(let i=0;i<Math.floor(w*(h-topY)*0.00008);i++){
           const nx=Math.random()*w, ny=topY+Math.random()*(h-topY);
           ctx.fillStyle='rgba(90,70,30,0.22)';
           ctx.beginPath(); ctx.arc(nx,ny,Math.random()*1.8+0.5,0,Math.PI*2); ctx.fill();
         }
-        // Dune-like ridges (soft horizontal undulations)
+        // Ridges
         ctx.fillStyle='rgba(255,255,255,0.06)';
         for(let r=0;r<4;r++){
           ctx.beginPath();
@@ -448,12 +455,12 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
       }
 
       function drawWater(area, tint){
-        // base water
+        const WATER_BASE_TOP = 'rgba(110,180,255,0.55)';
+        const WATER_BASE_BOT = 'rgba(30,90,180,0.75)';
         const grdW=ctx.createLinearGradient(0,area.y,0,area.y+area.h);
         grdW.addColorStop(0,WATER_BASE_TOP);
         grdW.addColorStop(1,WATER_BASE_BOT);
         ctx.fillStyle=grdW; ctx.fillRect(area.x,area.y,area.w,area.h);
-        // bubbles
         const arr = (area.y > h*0.5) ? bubblesTop : bubblesBottom;
         if(arr.length<28) spawn(arr, area, 2);
         for(let i=arr.length-1;i>=0;i--){
@@ -461,7 +468,6 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fill();
           if(b.y<area.y+3*DPR) arr.splice(i,1);
         }
-        // surface shimmer
         const waveY=area.y + 6*DPR + Math.sin(t*2.0)*2*DPR;
         ctx.beginPath(); ctx.moveTo(0,waveY);
         for(let x=0;x<=w;x+=4){
@@ -471,7 +477,6 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         ctx.lineTo(w,area.y); ctx.lineTo(0,area.y); ctx.closePath();
         ctx.fillStyle='rgba(255,255,255,0.07)'; ctx.fill();
 
-        // tint overlays
         if (tint){
           ctx.fillStyle = tint;
           ctx.fillRect(area.x,area.y,area.w,area.h);
@@ -479,7 +484,6 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
       }
 
       function drawSeagrass(area){
-        // simple Bezier blades swaying with waves
         const blades = Math.max(3, Math.floor(area.w / (40*DPR)));
         ctx.lineWidth = 2*DPR; ctx.strokeStyle = 'rgba(80,180,120,0.8)';
         for(let i=0;i<blades;i++){
@@ -500,38 +504,65 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
 
       function draw(){
         t += 0.016;
-        const now = performance.now();
-        const elapsed = now - startedAt;
-        intro = Math.max(0, Math.min(1, elapsed / introDur));
-
-        ctx.clearRect(0,0,w,h);
         const half = h*0.5;
-
         const sandTarget = Math.min(half, half * (worked / 504));
         const compTarget = Math.min(Math.max(0, half - sandTarget), half * (compUsed / 504));
         const overTarget = Math.min(half, half * (Math.max(0,overtime) / 504));
 
-        // Sand intro rises from bottom
-        const sandH = sandTarget * intro;
-        const sandTop = h - sandH;
-        if (sandH > 0) drawSand(sandTop);
+        ctx.clearRect(0,0,w,h);
 
-        // Water areas appear after a slight delay but still obey intro factor for a smooth build-up
-        const waterIntro = Math.max(0, Math.min(1, (elapsed - waterDelay) / (introDur*0.9)));
-        // Compensation water (bottom half) — tinted slightly red if compUsed>0
-        const compH = compTarget * waterIntro;
-        if (compH>0){
-          const area={x:0,y:h - sandTarget - compH,w:w,h:compH};
-          const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null;
-          drawWater(area, tint);
-        }
-        // Overtime water (top half) — tinted slightly green if overtime>0, add seagrass
-        const overH = overTarget * waterIntro;
-        if (overH>0){
-          const area={x:0,y:half - overH,w:w,h:overH};
-          const tint = (overtime>0) ? 'rgba(60,200,120,0.12)' : null;
-          drawWater(area, tint);
-          if (overtime>0) drawSeagrass(area);
+        const now = performance.now();
+        const elapsed = now - phaseStart;
+
+        if (phase === 0){
+          // SAND phase (ease)
+          const p = easeInOutCubic(clamp(elapsed / SAND_DUR));
+          const sandH = sandTarget * p;
+          const sandTop = h - sandH;
+          if (sandH > 0) drawSand(sandTop);
+          if (p >= 1){
+            phase = 1;
+            phaseStart = performance.now();
+          }
+        } else if (phase === 1){
+          // WATER phase (starts only after SAND finished)
+          // Draw full sand first
+          const sandTop = h - sandTarget;
+          if (sandTarget>0) drawSand(sandTop);
+          const p = easeOutCubic(clamp(elapsed / WATER_DUR));
+          // Compensation layer (bottom water)
+          const compH = compTarget * p;
+          if (compH>0){
+            const area={x:0,y:h - sandTarget - compH,w:w,h:compH};
+            const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null;
+            drawWater(area, tint);
+          }
+          // Overtime layer (top water)
+          const overH = overTarget * p;
+          if (overH>0){
+            const area={x:0,y:half - overH,w:w,h:overH};
+            const tint = (overtime>0) ? 'rgba(60,200,120,0.12)' : null;
+            drawWater(area, tint);
+            if (overtime>0) drawSeagrass(area);
+          }
+          if (p >= 1){
+            phase = 2;
+          }
+        } else {
+          // DONE (steady state)
+          const sandTop = h - sandTarget;
+          if (sandTarget>0) drawSand(sandTop);
+          if (compTarget>0){
+            const area={x:0,y:h - sandTarget - compTarget,w:w,h:compTarget};
+            const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null;
+            drawWater(area, tint);
+          }
+          if (overTarget>0){
+            const area={x:0,y:half - overTarget,w:w,h:overTarget};
+            const tint = (overtime>0) ? 'rgba(60,200,120,0.12)' : null;
+            drawWater(area, tint);
+            if (overtime>0) drawSeagrass(area);
+          }
         }
 
         // Midline
@@ -540,7 +571,8 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
 
         raf = requestAnimationFrame(draw);
       }
-      function start(){ cancel(); size(); startedAt = performance.now(); raf = requestAnimationFrame(draw); }
+
+      function start(){ cancel(); size(); phase=0; phaseStart=performance.now(); raf = requestAnimationFrame(draw); }
       function cancel(){ if(raf) cancelAnimationFrame(raf); raf=0; }
       const ro = new ResizeObserver(()=>start()); ro.observe(canvas);
       requestAnimationFrame(start);
@@ -857,7 +889,7 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 
   <footer id="appFooter" class="app-footer fx-top">
     <div class="app-footer-inner">
-      <div class="version-label">Hour Logger 68 • <span id="lastPushLabel">Last push: —</span></div>
+      <div class="version-label">Hour Logger 69 • <span id="lastPushLabel">Last push: —</span></div>
       <div class="qs-actions">
         <button class="btn small primary" id="btnPushNow">Push now</button>
         <button class="btn small" id="btnLoadNow">Load from GitHub</button>
