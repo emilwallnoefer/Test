@@ -177,6 +177,12 @@ html, body { overflow-x: hidden; }
     .quick-sync .last{ color: var(--muted); font-size:11px; margin:6px 0 }
     .quick-sync .qs-actions{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
     
+
+/* v67 footer snap */
+.version { position: fixed; left: 0; right: 0; bottom: 48px; text-align: center; z-index: 60; }
+.quick-sync { position: fixed; left: 0; right: 0; bottom: 8px; z-index: 60; }
+body { padding-bottom: 96px; } /* avoid content underlap */
+
 </style>
 </head>
 <body>
@@ -375,6 +381,9 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     function SandWater(canvas, worked, compUsed, overtime){
       const ctx = canvas.getContext('2d');
       let raf=0, t=0, DPR=1, w=0, h=0;
+      let aSand=0, aWater=0, aOver=0, phase=0; // 0=sand,1=water,2=overtime
+      const E = x=>1-Math.pow(1-x,3); // easeOutCubic
+      const D = {sand:700, water:600, over:500}; // ms per phase
       const bubblesBottom=[], bubblesTop=[];
 
       function size(){
@@ -392,9 +401,17 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         ctx.clearRect(0,0,w,h);
         const half = h*0.5;
 
-        const sandH = Math.min(half, half * (worked / 504));
-        const compH = Math.min(Math.max(0, half - sandH), half * (compUsed / 504));
-        const overH = Math.min(half, half * (Math.max(0,overtime) / 504));
+        const sandHTarget = Math.min(half, half * (worked / 504));
+        aSand += (sandHTarget - aSand) * 0.12;
+        const sandH = aSand;
+        const compHTarget = Math.min(Math.max(0, half - sandHTarget), half * (compUsed / 504));
+        // animate water only after sand mostly done
+        if (aSand > sandHTarget*0.95) { aWater += (compHTarget - aWater) * 0.12; }
+        const compH = aWater;
+        const overHTarget = Math.min(half, half * (Math.max(0,overtime) / 504));
+        // animate overtime after water mostly done
+        if (aWater > compHTarget*0.95) { aOver += (overHTarget - aOver) * 0.12; }
+        const overH = aOver;
 
         if (sandH>0){
           const topY = h - sandH;
@@ -410,6 +427,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           const area={x:0,y:h - sandH - compH,w:w,h:compH}; const waveY=area.y + 6*DPR + Math.sin(t*1.8)*2*DPR;
           const grdW=ctx.createLinearGradient(0,area.y,0,area.y+area.h); grdW.addColorStop(0,'rgba(100,180,255,0.55)'); grdW.addColorStop(1,'rgba(30,90,180,0.7)');
           ctx.fillStyle=grdW; ctx.fillRect(area.x,area.y,area.w,area.h);
+          if (compUsed>0) { ctx.fillStyle='rgba(255,0,0,0.06)'; ctx.fillRect(area.x,area.y,area.w,area.h); }
           if(bubblesBottom.length<28) spawn(bubblesBottom, area, 2);
           for(let i=bubblesBottom.length-1;i>=0;i--){ const b=bubblesBottom[i]; b.y+=b.vy; b.x+=Math.sin((t+i)*0.8)*0.2*DPR+b.drift; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fill(); if(b.y<area.y+4*DPR) bubblesBottom.splice(i,1); }
           ctx.beginPath(); ctx.moveTo(0,waveY); for(let x=0;x<=w;x+=4){ const y=waveY + Math.sin(x*0.04 + t*2.2)*2*DPR + Math.sin(x*0.025 + t*1.7)*1.2*DPR; ctx.lineTo(x,y);} ctx.lineTo(w,area.y); ctx.lineTo(0,area.y); ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.fill();
@@ -417,8 +435,23 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
 
         if (overH>0){
           const area={x:0,y:half - overH,w:w,h:overH}; const waveY=area.y + 6*DPR + Math.sin(t*2.0)*2*DPR;
-          const grdW2=ctx.createLinearGradient(0,area.y,0,area.y+area.h); grdW2.addColorStop(0,'rgba(120,200,255,0.55)'); grdW2.addColorStop(1,'rgba(10,70,160,0.75)');
+          const grdW2=ctx.createLinearGradient(0,area.y,0,area.y+area.h);
+          grdW2.addColorStop(0,'rgba(20,140,100,0.55)');
+          grdW2.addColorStop(1,'rgba(10,90,70,0.75)');
           ctx.fillStyle=grdW2; ctx.fillRect(area.x,area.y,area.w,area.h);
+          // seagrass blades
+          ctx.save(); ctx.strokeStyle='rgba(20,120,80,0.5)'; ctx.lineWidth=1.2*DPR;
+          const blades = Math.max(4, Math.floor(w/60));
+          for(let i=0;i<blades;i++){
+            const bx = (i+0.5)*(w/blades);
+            const baseY = area.y+area.h;
+            const hgt = Math.min(36*DPR + (i%3)*8*DPR, area.h-4*DPR);
+            const sway = Math.sin(t*1.6 + i)*8*DPR;
+            ctx.beginPath(); ctx.moveTo(bx, baseY);
+            ctx.quadraticCurveTo(bx+sway*0.4, baseY-hgt*0.4, bx+sway, baseY-hgt);
+            ctx.stroke();
+          }
+          ctx.restore();
           if(bubblesTop.length<20) spawn(bubblesTop, area, 1);
           for(let i=bubblesTop.length-1;i>=0;i--){ const b=bubblesTop[i]; b.y+=b.vy; b.x+=Math.sin((t+i)*1.1)*0.25*DPR+b.drift; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fill(); if(b.y<area.y+2*DPR) bubblesTop.splice(i,1); }
           ctx.beginPath(); ctx.moveTo(0,waveY); for(let x=0;x<=w;x+=4){ const y=waveY + Math.sin(x*0.05 + t*2.0)*2*DPR + Math.sin(x*0.03 + t*1.6)*1.2*DPR; ctx.lineTo(x,y);} ctx.lineTo(w,area.y); ctx.lineTo(0,area.y); ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.fill();
