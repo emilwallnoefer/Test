@@ -761,7 +761,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     (w.breaks||[]).forEach(b=>addBreakRow(b));
     computeTotal();
   }
-} }
+} 
     function renderLogger(){ const input=document.getElementById('logDate'); if(!input.value) input.value=toDateStr(new Date()); clearLoggerFor(input.value); }
     document.getElementById('logDate').addEventListener('change',e=>clearLoggerFor(e.target.value));
     document.getElementById('btnStartNow').addEventListener('click',()=>{document.getElementById('startTime').value=nowHHMM(); computeTotal();});
@@ -863,49 +863,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
     }
   
     // ---- SAFE REBIND ----
-    /* SAFE REBIND */ 
-    (function(){
-      function byId(id){ return document.getElementById(id); }
-      function validTime(t){ return /^\d{2}:\d{2}$/.test(t); }
-      function parseHHMM(t){ const [h,m]=t.split(':').map(Number); return h*60+m; }
-      function fmt(m){ return (Math.floor(m/60))+'h '+String(m%60).padStart(2,'0')+'m'; }
-      function computeNet(){
-        const a=byId('startTime').value.trim(), b=byId('stopTime').value.trim();
-        if(!validTime(a)||!validTime(b)) return 0;
-        let w=parseHHMM(b)-parseHHMM(a); if(w<0) w+=24*60;
-        let bt=0; document.querySelectorAll('#breaksPane .break-item').forEach(it=>{
-          const s=it.querySelector('.bi-start')?.value.trim()||'', e=it.querySelector('.bi-stop')?.value.trim()||'';
-          if(validTime(s)&&validTime(e)){ let m=parseHHMM(e)-parseHHMM(s); if(m>0) bt+=m; }
-        });
-        return Math.max(0,w-bt);
-      }
-      function saveDay(){
-        try{
-          const a=byId('startTime').value.trim(), b=byId('stopTime').value.trim();
-          /* allow empty save even without start/stop */
-          const ds = byId('logDate').value || (new Date()).toISOString().slice(0,10);
-          const net = (validTime(a) && validTime(b)) ? computeNet() : 0;
-          const breaks=[]; document.querySelectorAll('#breaksPane .break-item').forEach(it=>breaks.push({
-            name: it.querySelector('.bi-name')?.value.trim()||'',
-            start: it.querySelector('.bi-start')?.value.trim()||'',
-            stop: it.querySelector('.bi-stop')?.value.trim()||''
-          }));
-          const holiday = byId('holidayFlag').checked;
-          try { state.work ||= {}; } catch(e){ window.state = window.state || {}; state.work = state.work || {}; }
-          state.work[ds] = { start:a, stop:b, breaks, netMins: net, holiday };
-          save();
-          if (typeof renderMenu==='function') renderMenu();
-          if (typeof renderWeek==='function') renderWeek();
-          if (typeof toast==='function') toast('Day saved'); if (typeof show==='function') show('calendar');
-        } catch (e){
-          console.error('Save failed', e);
-          alert('Save failed. Please try again.');
-        }
-      }
-      const btn = byId('btnSave');
-      if(btn){ btn.addEventListener('click', saveDay); }
-    })();
-    
+// (v76 fixed) Legacy rebind removed to avoid conflicting saves.
+// All saving is handled by the main logger code above.
 
 // --- Cloud Sync (GitHub Contents API) ---
 (function(){
