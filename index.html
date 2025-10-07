@@ -178,14 +178,13 @@ html, body { overflow-x: hidden; }
     .quick-sync .qs-actions{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
     
 
-    .app-footer{ position:fixed; left:0; right:0; bottom:0; z-index:9;
-      padding:8px calc(var(--pad)); background:rgba(10,12,18,.82);
-      border-top:1px solid var(--stroke); backdrop-filter:saturate(180%) blur(10px); }
+    .app-footer{ position:fixed; inset-inline:0; bottom:0; z-index:9;
+      padding:8px calc(var(--pad)); background:#0f1118dd;
+      border-top:1px solid var(--stroke); backdrop-filter:saturate(180%) blur(8px); }
     .app-footer-inner{ display:grid; gap:6px; justify-items:center }
     .app-footer .version-label{ color:var(--muted); font-size:11px }
-    .app-footer .qs-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center }
-    /* give room for footer */
-    .view{ padding-bottom: calc(env(safe-area-inset-bottom,0px) + 108px); }
+    /* Ensure content never hides under footer */
+    .view{ padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 110px) !important; }
 
 </style>
 </head>
@@ -218,7 +217,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 72</div>
+    <div class="version version-menu">Hour Logger 73</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -255,7 +254,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 72</div>
+    <div class="version">Hour Logger 73</div>
   </section>
 
   <!-- LOGGER -->
@@ -285,7 +284,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 72</div>
+    <div class="version">Hour Logger 73</div>
   </section>
 
   <!-- Focus bubble -->
@@ -314,7 +313,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "72";
+    const APP_VERSION = "73";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -382,8 +381,9 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     addEventListener('resize',()=>{resizeFX();initParticles();}); resizeFX(); initParticles(); drawFX();
 
     
-    // Sand + water renderer v71 (easing + sequential: sand -> water)
-    function SandWater(canvas, worked, compUsed, overtime, opts={}){
+    
+    // Sand + Water renderer v73 (sequential + easing, textured sand, tints, seagrass)
+    function SandWater(canvas, worked, compUsed, overtime){
       const ctx = canvas.getContext('2d');
       let raf=0, t=0, DPR=1, w=0, h=0;
       const bubblesBottom=[], bubblesTop=[];
@@ -394,7 +394,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
       const easeInOutCubic = p => (p<.5) ? 4*p*p*p : 1 - Math.pow(-2*p+2,3)/2;
 
       // Phase timing (ms)
-      const SAND_DUR = 950;
+      const SAND_DUR = 900;
       const WATER_DUR = 800;
       let phase = 0; // 0=sand, 1=water, 2=done
       let phaseStart = performance.now();
@@ -422,6 +422,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         ctx.fillStyle = grd;
         ctx.fillRect(0, topY, w, h-topY);
 
+        // Stipple/grains
         const grains = Math.floor(w*(h-topY)*0.0005);
         for(let i=0;i<grains;i++){
           const nx = Math.random()*w;
@@ -430,11 +431,13 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           ctx.fillStyle = `rgba(120,100,60,${a})`;
           ctx.fillRect(nx,ny,1,1);
         }
+        // Larger speckles
         for(let i=0;i<Math.floor(w*(h-topY)*0.00008);i++){
           const nx=Math.random()*w, ny=topY+Math.random()*(h-topY);
           ctx.fillStyle='rgba(90,70,30,0.22)';
           ctx.beginPath(); ctx.arc(nx,ny,Math.random()*1.8+0.5,0,Math.PI*2); ctx.fill();
         }
+        // Soft dune ridges
         ctx.fillStyle='rgba(255,255,255,0.06)';
         for(let r=0;r<4;r++){
           ctx.beginPath();
@@ -510,35 +513,33 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         const elapsed = now - phaseStart;
 
         if (phase === 0){
+          // Sand first (eased)
           const p = easeInOutCubic(clamp(elapsed / SAND_DUR));
           const sandH = sandTarget * p;
           const sandTop = h - sandH;
           if (sandH > 0) drawSand(sandTop);
-          if (p >= 1){
-            phase = 1;
-            phaseStart = performance.now();
-          }
+          if (p >= 1){ phase = 1; phaseStart = performance.now(); }
         } else if (phase === 1){
+          // Water only after sand finished
           const sandTop = h - sandTarget;
           if (sandTarget>0) drawSand(sandTop);
           const p = easeOutCubic(clamp(elapsed / WATER_DUR));
           const compH = compTarget * p;
           if (compH>0){
             const area={x:0,y:h - sandTarget - compH,w:w,h:compH};
-            const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null;
+            const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null; // minimal red
             drawWater(area, tint);
           }
           const overH = overTarget * p;
           if (overH>0){
             const area={x:0,y:half - overH,w:w,h:overH};
-            const tint = (overtime>0) ? 'rgba(60,200,120,0.12)' : null;
+            const tint = (overtime>0) ? 'rgba(60,200,120,0.12)' : null; // subtle green
             drawWater(area, tint);
             if (overtime>0) drawSeagrass(area);
           }
-          if (p >= 1){
-            phase = 2;
-          }
+          if (p >= 1){ phase = 2; }
         } else {
+          // Done: steady state
           const sandTop = h - sandTarget;
           if (sandTarget>0) drawSand(sandTop);
           if (compTarget>0){
@@ -554,6 +555,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           }
         }
 
+        // Midline
         ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1*DPR;
         ctx.beginPath(); ctx.moveTo(0,half); ctx.lineTo(w,half); ctx.stroke();
 
@@ -567,8 +569,6 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
       return { cancel, start };
     }
 
-    // (old renderer removed)
-    
     // Views
     const views={menu:document.getElementById('view-menu'),calendar:document.getElementById('view-calendar'),logger:document.getElementById('view-logger')};
     function show(n){for(const v in views) views[v].classList.remove('active'); views[n].classList.add('active'); backBtn.style.visibility = (n==='menu') ? 'hidden' : 'visible'; if(n==='menu') renderMenu(); if(n==='calendar') renderWeek(); if(n==='logger') renderLogger();}
@@ -872,12 +872,9 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 })();
   </script>
 
-
-
-
-  <footer id="appFooter" class="app-footer fx-top">
+<footer id="appFooter" class="app-footer fx-top">
     <div class="app-footer-inner">
-      <div class="version-label">Hour Logger 72 • <span id="lastPushLabel">Last push: —</span></div>
+      <div class="version-label">Hour Logger 73 • <span id="lastPushLabel">Last push: —</span></div>
       <div class="qs-actions">
         <button class="btn small primary" id="btnPushNow">Push now</button>
         <button class="btn small" id="btnLoadNow">Load from GitHub</button>
@@ -887,11 +884,14 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 
 
 <script>
-// v68 footer quick-sync + last push text
+// v73 footer quick-sync + last push text
 (function(){
   function humanize(ts){
     if(!ts) return '—';
     try{ const d=new Date(ts); if(isNaN(d.getTime())) return '—'; return d.toLocaleString(); }catch(_){ return '—'; }
+  }
+  function getPrefs(){
+    try{ return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); }catch(_){ return {}; }
   }
   function updateLastPush(){
     const el = document.getElementById('lastPushLabel');
@@ -907,7 +907,7 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 
   async function pushNow(){
     try{
-      const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_){ return {}; } })();
+      const p = getPrefs();
       if(p && p.token && p.owner && p.repo){
         const headers = { 'Authorization':'token '+p.token, 'Accept':'application/vnd.github+json' };
         const getUrl  = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}?ref=${encodeURIComponent(p.branch||'main')}`;
@@ -923,8 +923,7 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       } else if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
         await window.hourloggerCloud.saveSilently();
       } else {
-        alert('Cloud sync is not configured.');
-        return;
+        alert('Cloud sync is not configured.'); return;
       }
       localStorage.setItem('hourlogger.lastPushAt', new Date().toISOString());
       updateLastPush();
@@ -933,7 +932,7 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
   }
   if(bPush){ bPush.addEventListener('click', e=>{ e.preventDefault(); pushNow(); }); }
 
-  // also stamp last push after silent pushes
+  // Stamp last push after silent pushes too
   setTimeout(()=>{
     try{
       if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
