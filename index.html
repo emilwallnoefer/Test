@@ -747,7 +747,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
   row.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',onChange));
   row.querySelector('.bi-remove').addEventListener('click',()=>{ row.remove(); computeTotal(); });
   computeTotal();
-}); computeTotal(); }
+}
     function clearLoggerFor(ds){
   document.getElementById('startTime').value='';
   document.getElementById('stopTime').value='';
@@ -862,10 +862,7 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       navigator.serviceWorker.addEventListener('controllerchange', ()=>{ /* page will reload */ });
     }
   
-    // ---- SAFE REBIND ----
-// (v76 fixed) Legacy rebind removed to avoid conflicting saves.
-// All saving is handled by the main logger code above.
-
+    // ---- SAFE REBIND removed in v76 deepfix: prevented double-binding and old format saves.
 // --- Cloud Sync (GitHub Contents API) ---
 (function(){
   const openBtn = document.getElementById('mSync');
