@@ -173,6 +173,24 @@ html, body { overflow-x: hidden; }
 }
 
 </style>
+
+<!-- v66-early-guard -->
+<script>
+(function(){
+  try{
+    const LS = localStorage, SS = sessionStorage;
+    if (SS.getItem('hourlogger.justLoaded') === '1'){
+      const data = LS.getItem('hourlogger.data') || '';
+      const backup = LS.getItem('hourlogger.backup') || '';
+      if ((!data || data.length < 10) && backup){
+        LS.setItem('hourlogger.data', backup);
+      }
+      SS.removeItem('hourlogger.justLoaded');
+    }
+  }catch(_){}
+})();
+</script>
+
 </head>
 <body>
   <div class="toast-wrap"><div id="toast" class="toast">Saved</div></div>
@@ -203,7 +221,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 62</div>
+    <div class="version version-menu">Hour Logger 66</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -241,7 +259,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 62</div>
+    <div class="version">Hour Logger 66</div>
   </section>
 
   <!-- LOGGER -->
@@ -271,7 +289,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 62</div>
+    <div class="version">Hour Logger 66</div>
   </section>
 
   <!-- Focus bubble -->
@@ -300,7 +318,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "62";
+    const APP_VERSION = "66";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -711,8 +729,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
   }
 
 
-  if(btnL) btnL.addEventListener('click', doLoad);
-  if(btnS) btnS.addEventListener('click', doSave);
+  if(btnL) btnL.addEventListener('click', (e)=>{ e.preventDefault(); window.doLoad && window.doLoad(); });
+  if(btnS) btnS.addEventListener('click', (e)=>{ e.preventDefault(); window.doSave && window.doSave(); });
 
   window.hourloggerCloud = { save: doSave, saveSilently: saveSilently, loadSilently: loadSilently, auto: true };
 
@@ -721,8 +739,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
         try{
           const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
           if(p && p.token && p.owner && p.repo){
-            if(!sessionStorage.getItem('hourlogger.autoload62')){
-              sessionStorage.setItem('hourlogger.autoload62','1');
+            if(!sessionStorage.getItem('hourlogger.autoload53')){
+              sessionStorage.setItem('hourlogger.autoload53','1');
               const ok = await loadSilently();
               if(ok){
                 try { if (typeof renderMenu==='function') renderMenu(); if (typeof renderWeek==='function') renderWeek(); } catch(_){}
@@ -735,14 +753,12 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 })();
   </script>
 
-
-<!-- v62 overrides -->
+<!-- v66 overrides -->
 <script>
 (() => {
-  const LS=localStorage;
+  const LS=localStorage, SS=sessionStorage;
   function id(x){ return document.getElementById(x); }
   function getPrefs(){
-    // Support both old and new inputs/keys
     const owner = (id('ghOwner')?.value || id('gh-owner')?.value || LS.getItem('gh.owner') || '').trim();
     const repo  = (id('ghRepo') ?.value || id('gh-repo') ?.value || LS.getItem('gh.repo')  || '').trim();
     const branch= (id('ghBranch')?.value || id('gh-branch')?.value || LS.getItem('gh.branch')|| 'main').trim();
@@ -750,25 +766,10 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
     const token = (id('ghToken') ?.value || id('gh-token') ?.value || LS.getItem('gh.token') || '').trim();
     return { owner, repo, branch, path, token };
   }
-
-  // Save settings only (no data push)
-  window.doSave = function(){
-    const p=getPrefs();
-    if(!p.owner || !p.repo || !p.path){
-      alert('Please fill owner, repo and path.'); return;
-    }
-    LS.setItem('gh.owner', p.owner);
-    LS.setItem('gh.repo', p.repo);
-    LS.setItem('gh.branch', p.branch || 'main');
-    LS.setItem('gh.path', p.path);
-    if (p.token) LS.setItem('gh.token', p.token);
-    if (window.toast) window.toast('Cloud sync settings saved (no push).');
-  };
-
   async function clearCaches(){
     try{
       if(navigator.serviceWorker?.controller){
-        navigator.serviceWorker.controller.postMessage('clearCaches');
+        navigator.serviceWorker.controller.postMessage({type:'clearCaches'});
       }
       if('caches' in window){
         const ks=await caches.keys();
@@ -776,50 +777,53 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       }
     }catch(_){}
   }
-
   async function fetchJSONWithToken(p){
-    // Prefer GitHub Contents API when token present (works with private repos)
     if(p.token){
       const url = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}?ref=${encodeURIComponent(p.branch)}`;
-      const res = await fetch(url, { headers: { 'Authorization': 'token ' + p.token, 'Accept': 'application/vnd.github+json' }, cache:'no-store' });
-      if(!res.ok) throw new Error('GitHub API failed: '+res.status);
-      const meta = await res.json();
-      const text = atob(String(meta.content||'').replace(/
-/g,''));
+      const r = await fetch(url, { headers: { 'Authorization': 'token ' + p.token, 'Accept': 'application/vnd.github+json' }, cache:'no-store' });
+      if(!r.ok) throw new Error('GitHub API failed: ' + r.status);
+      const meta = await r.json();
+      const text = atob(String(meta.content||'').replace(/\n/g,''));
       return JSON.parse(text);
     } else {
-      // Public raw fallback
       const rawUrl = `https://raw.githubusercontent.com/${p.owner}/${p.repo}/${p.branch}/${p.path}`;
-      const res = await fetch(rawUrl, { cache:'no-store' });
-      if(!res.ok) throw new Error('Raw fetch failed: '+res.status);
-      return await res.json();
+      const r = await fetch(rawUrl, { cache:'no-store' });
+      if(!r.ok) throw new Error('Raw fetch failed: ' + r.status);
+      return await r.json();
     }
   }
-
+  function hardReload(){
+    const u = new URL(location.href); u.searchParams.set('__hr', Date.now().toString()); location.replace(u.toString());
+  }
+  // Save SETTINGS ONLY (no push)
+  window.doSave = function(){
+    const p=getPrefs();
+    if(!p.owner || !p.repo || !p.path){ alert('Please fill owner, repo and path.'); return; }
+    LS.setItem('gh.owner', p.owner);
+    LS.setItem('gh.repo', p.repo);
+    LS.setItem('gh.branch', p.branch || 'main');
+    LS.setItem('gh.path', p.path);
+    if (p.token) LS.setItem('gh.token', p.token);
+    if (window.toast) window.toast('Cloud sync settings saved (no push).');
+  };
+  // Load: clear caches -> write -> hard refresh
   window.doLoad = async function(){
     const p=getPrefs();
     if(!p.owner || !p.repo || !p.path){ alert('Missing owner/repo/path'); return; }
     try{
+      const prev = LS.getItem('hourlogger.data'); if(prev) LS.setItem('hourlogger.backup', prev);
       const data = await fetchJSONWithToken(p);
-      // Clear all caches FIRST
       await clearCaches();
-      // Then write data locally
       LS.setItem('hourlogger.data', JSON.stringify(data||{}));
-      // Then auto-reload UI (web + PWA)
-      setTimeout(()=>location.reload(), 120);
-    }catch(e){
-      console.error(e);
-      alert('Load failed. Check repo/branch/path and token (if private).');
-    }
+      SS.setItem('hourlogger.justLoaded','1');
+      if (navigator.serviceWorker?.controller){ navigator.serviceWorker.controller.postMessage({type:'SKIP_WAITING'}); }
+      setTimeout(hardReload, 120);
+    }catch(e){ console.error(e); alert('Load failed. Check repo/branch/path and token (if private).'); }
   };
-
-  // Silent helper used by autoloads (also follows clear-first order)
-  window.loadSilently = async function(){
-    try{ await window.doLoad(); return true; }catch(_){ return false; }
-  };
-
-  document.documentElement.setAttribute('data-app-version','v62');
+  window.loadSilently = async function(){ try{ await window.doLoad(); return true; }catch(_){ return false; } };
+  document.documentElement.setAttribute('data-app-version','v66');
 })();
 </script>
+
 </body>
 </html>
