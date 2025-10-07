@@ -177,6 +177,18 @@ html, body { overflow-x: hidden; }
     .quick-sync .last{ color: var(--muted); font-size:11px; margin:6px 0 }
     .quick-sync .qs-actions{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
     
+
+    /* v74: fixed quick-sync footer */
+    .quick-sync.qs-fixed{
+      position:fixed; left:0; right:0; bottom:0; z-index:90;
+      padding:8px 12px; background:#0f1118dd; border-top:1px solid var(--stroke);
+      backdrop-filter:saturate(180%) blur(8px);
+      display:grid; gap:6px; justify-items:center;
+    }
+    .quick-sync.qs-fixed .last{ margin:0; font-size:11px; color:var(--muted); }
+    .quick-sync.qs-fixed .qs-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center }
+    .view{ padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 120px); }
+    
 </style>
 </head>
 <body>
@@ -208,7 +220,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 73</div>
+    <div class="version version-menu">Hour Logger 74</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -245,7 +257,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 73</div>
+    <div class="version">Hour Logger 74</div>
   </section>
 
   <!-- LOGGER -->
@@ -275,7 +287,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 73</div>
+    <div class="version">Hour Logger 74</div>
   </section>
 
   <!-- Focus bubble -->
@@ -304,7 +316,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "73";
+    const APP_VERSION = "74";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -363,13 +375,85 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     const dayBankDelta=ds=>{ if(isHoliday(ds)) return 0; const w=workMins(ds), c=compMins(ds); return Math.max(0, w - TARGET) - c; };
     const overtimeBank=()=>{ const dates=new Set([...Object.keys(state.work),...Object.keys(state.comp)]); let t=0; dates.forEach(ds=>t+=dayBankDelta(ds)); return t; };
 
-    // Background FX (RGB glow particles)
-    const fx=document.getElementById('fxCanvas'),ctxFX=fx.getContext('2d'); let DPR=Math.max(1,Math.min(2,window.devicePixelRatio||1)),W=0,H=0,particles=[];
+    
+    // Background FX v74: underwater light rays + rising bubbles
+    const fx=document.getElementById('fxCanvas'),ctxFX=fx.getContext('2d'); let DPR=Math.max(1,Math.min(2,window.devicePixelRatio||1)),W=0,H=0;
+    let rays=[], bubbles=[];
     function resizeFX(){W=fx.width=Math.floor(innerWidth*DPR);H=fx.height=Math.floor(innerHeight*DPR);fx.style.width=innerWidth+'px';fx.style.height=innerHeight+'px';}
-    function rnd(a,b){return a+Math.random()*(b-a)}
-    function initParticles(){ const count=12; particles=Array.from({length:count},()=>({x:rnd(0,W),y:rnd(0,H),r:rnd(70,140)*DPR,a:rnd(0,Math.PI*2),s:rnd(0.1,0.35),h:rnd(0,360)})); }
-    function drawFX(){ ctxFX.clearRect(0,0,W,H); ctxFX.globalCompositeOperation='lighter'; for(const p of particles){ p.a+=0.002*p.s; p.x+=Math.cos(p.a)*0.25*DPR; p.y+=Math.sin(p.a)*0.25*DPR; p.h=(p.h+0.06)%360; const g=ctxFX.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r); g.addColorStop(0,`hsla(${p.h},90%,60%,.16)`); g.addColorStop(1,`hsla(${(p.h+60)%360},90%,50%,0)`); ctxFX.fillStyle=g; ctxFX.beginPath(); ctxFX.arc(p.x,p.y,p.r,0,Math.PI*2); ctxFX.fill(); } requestAnimationFrame(drawFX); }
-    addEventListener('resize',()=>{resizeFX();initParticles();}); resizeFX(); initParticles(); drawFX();
+    function initRays(){
+      const n=5; rays=[];
+      for(let i=0;i<n;i++){
+        rays.push({
+          x: Math.random()*W*0.3,
+          y: -H*0.2 - Math.random()*H*0.3,
+          w: (80+Math.random()*120)*DPR,
+          a: 0.05 + Math.random()*0.08,
+          s: 0.2 + Math.random()*0.5,
+          o: 0.05 + Math.random()*0.07
+        });
+      }
+    }
+    function initBubbles(){
+      bubbles=[];
+      const n = Math.max(24, Math.floor(W/40));
+      for(let i=0;i<n;i++){
+        bubbles.push({
+          x: Math.random()*W,
+          y: H + Math.random()*H,
+          r: (1 + Math.random()*3)*DPR,
+          vy: (0.2 + Math.random()*0.6)*DPR,
+          drift: (Math.random()*0.4-0.2)*DPR,
+          phase: Math.random()*Math.PI*2
+        });
+      }
+    }
+    function drawRays(t){
+      for(const r of rays){
+        // gentle sway
+        const sway = Math.sin(t*0.0006 + r.x*0.0002)*r.w*0.15;
+        const x0 = r.x + sway;
+        const grad = ctxFX.createLinearGradient(x0, 0, x0, H);
+        grad.addColorStop(0, `rgba(120,200,255,${r.o})`);
+        grad.addColorStop(1, `rgba(120,200,255,0)`);
+        ctxFX.fillStyle = grad;
+        ctxFX.globalCompositeOperation='screen';
+        ctxFX.beginPath();
+        ctxFX.moveTo(x0 - r.w, 0);
+        ctxFX.lineTo(x0 + r.w, 0);
+        ctxFX.lineTo(x0 + r.w*1.6, H);
+        ctxFX.lineTo(x0 - r.w*1.6, H);
+        ctxFX.closePath();
+        ctxFX.fill();
+      }
+    }
+    function drawBubbles(t){
+      ctxFX.globalCompositeOperation='lighter';
+      for(const b of bubbles){
+        b.y -= b.vy;
+        b.x += Math.sin(t*0.002 + b.phase)*0.4*DPR + b.drift*0.02;
+        ctxFX.beginPath(); ctxFX.arc(b.x,b.y,b.r,0,Math.PI*2);
+        ctxFX.fillStyle='rgba(210,240,255,0.20)'; ctxFX.fill();
+        ctxFX.lineWidth=0.6*DPR; ctxFX.strokeStyle='rgba(255,255,255,0.25)'; ctxFX.stroke();
+        if(b.y < -10*DPR){ b.y = H + Math.random()*H*0.5; b.x = Math.random()*W; }
+      }
+    }
+    function drawFX(t){
+      ctxFX.clearRect(0,0,W,H);
+      // deep water background gradient
+      const g=ctxFX.createLinearGradient(0,0,0,H);
+      g.addColorStop(0,'#0c1c2a'); g.addColorStop(1,'#041018');
+      ctxFX.fillStyle=g; ctxFX.fillRect(0,0,W,H);
+      // light source glow at top-left
+      const gl=ctxFX.createRadialGradient(W*0.05,H*0.02,0,W*0.05,H*0.02,Math.max(W,H)*0.5);
+      gl.addColorStop(0,'rgba(140,220,255,0.25)'); gl.addColorStop(1,'rgba(140,220,255,0)');
+      ctxFX.globalCompositeOperation='screen'; ctxFX.fillStyle=gl; ctxFX.fillRect(0,0,W,H);
+      drawRays(t);
+      drawBubbles(t);
+      requestAnimationFrame(drawFX);
+    }
+    addEventListener('resize',()=>{resizeFX();initRays();initBubbles();});
+    resizeFX(); initRays(); initBubbles(); requestAnimationFrame(drawFX);
+    
 
     
     // Sand + Water renderer v73 (sequential + easing, textured sand, subtle tints, seagrass on overtime)
@@ -938,21 +1022,22 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
     const ts = LS.getItem('hourlogger.lastPushAt') || '';
     document.querySelectorAll('.quick-sync [data-last-push]').forEach(el=> el.textContent = 'Last push: ' + humanize(ts));
   }
+  
   function ensureQuickSync(){
-    document.querySelectorAll('.version').forEach(verEl=>{
-      if (verEl.nextElementSibling && verEl.nextElementSibling.classList && verEl.nextElementSibling.classList.contains('quick-sync')) return;
-      const wrap = document.createElement('div');
-      wrap.className = 'quick-sync';
-      wrap.innerHTML = '<div class="last"><span data-last-push>Last push: —</span></div>' +
-                       '<div class="qs-actions">' +
-                       '<button class="btn small primary" data-action="push-now">Push now</button>' +
-                       '<button class="btn small" data-action="load-now">Load from GitHub</button>' +
-                       '</div>';
-      verEl.after(wrap);
-    });
+    // create one fixed quick-sync bar at bottom
+    if(document.querySelector('.quick-sync.qs-fixed')){ updateLastPushTexts(); return; }
+    const wrap = document.createElement('div');
+    wrap.className = 'quick-sync qs-fixed';
+    wrap.innerHTML = '<div class="last"><span data-last-push>Last push: —</span></div>' +
+                     '<div class="qs-actions">' +
+                     '<button class="btn small primary" data-action="push-now">Push now</button>' +
+                     '<button class="btn small" data-action="load-now">Load from GitHub</button>' +
+                     '</div>';
+    document.body.appendChild(wrap);
     updateLastPushTexts();
   }
   ensureQuickSync();
+
   document.addEventListener('hourlogger:view', ensureQuickSync);
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-action]'); if(!btn) return;
