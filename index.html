@@ -177,15 +177,6 @@ html, body { overflow-x: hidden; }
     .quick-sync .last{ color: var(--muted); font-size:11px; margin:6px 0 }
     .quick-sync .qs-actions{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
     
-
-    .app-footer{ position:fixed; left:0; right:0; bottom:0; z-index:9;
-      padding:8px calc(var(--pad)); background:#0f1118dd; border-top:1px solid var(--stroke); backdrop-filter:saturate(180%) blur(8px); }
-    .app-footer-inner{ display:grid; gap:6px; justify-items:center }
-    .app-footer .version-label{ color:var(--muted); font-size:11px }
-    .app-footer .qs-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center }
-    /* ensure content does not hide under footer */
-    .view{ padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 112px); }
-
 </style>
 </head>
 <body>
@@ -381,8 +372,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     addEventListener('resize',()=>{resizeFX();initParticles();}); resizeFX(); initParticles(); drawFX();
 
     
-    
-    // Sand + Water renderer v73 (sequential + easing, textured sand, green/red tints, seagrass)
+    // Sand + Water renderer v73 (sequential + easing, textured sand, subtle tints, seagrass on overtime)
     function SandWater(canvas, worked, compUsed, overtime){
       const ctx = canvas.getContext('2d');
       let raf=0, t=0, DPR=1, w=0, h=0;
@@ -415,12 +405,12 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
       function drawSand(areaY){
         const topY = areaY;
         const grd = ctx.createLinearGradient(0, topY, 0, h);
-        grd.addColorStop(0,'#e3d3a9');
-        grd.addColorStop(1,'#bf9a63');
+        grd.addColorStop(0,'#e3d3a9'); // light beige
+        grd.addColorStop(1,'#bf9a63'); // warm sand
         ctx.fillStyle = grd;
         ctx.fillRect(0, topY, w, h-topY);
 
-        // Stipple/grains
+        // Stippled grains (like the reference)
         const grains = Math.floor(w*(h-topY)*0.0005);
         for(let i=0;i<grains;i++){
           const nx = Math.random()*w;
@@ -429,13 +419,13 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           ctx.fillStyle = `rgba(120,100,60,${a})`;
           ctx.fillRect(nx,ny,1,1);
         }
-        // Speckles
+        // Larger speckles
         for(let i=0;i<Math.floor(w*(h-topY)*0.00008);i++){
           const nx=Math.random()*w, ny=topY+Math.random()*(h-topY);
           ctx.fillStyle='rgba(90,70,30,0.22)';
           ctx.beginPath(); ctx.arc(nx,ny,Math.random()*1.8+0.5,0,Math.PI*2); ctx.fill();
         }
-        // Dune ridges
+        // Dune-like soft ridges
         ctx.fillStyle='rgba(255,255,255,0.06)';
         for(let r=0;r<4;r++){
           ctx.beginPath();
@@ -465,6 +455,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fill();
           if(b.y<area.y+3*DPR) arr.splice(i,1);
         }
+        // surface shimmer
         const waveY=area.y + 6*DPR + Math.sin(t*2.0)*2*DPR;
         ctx.beginPath(); ctx.moveTo(0,waveY);
         for(let x=0;x<=w;x+=4){
@@ -512,21 +503,21 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         const elapsed = now - phaseStart;
 
         if (phase === 0){
-          // Sand first with easing
+          // Sand first (eased)
           const p = easeInOutCubic(clamp(elapsed / SAND_DUR));
           const sandH = sandTarget * p;
           const sandTop = h - sandH;
           if (sandH > 0) drawSand(sandTop);
           if (p >= 1){ phase = 1; phaseStart = performance.now(); }
         } else if (phase === 1){
-          // After sand done, water rises with easing
+          // Water only after sand finished
           const sandTop = h - sandTarget;
           if (sandTarget>0) drawSand(sandTop);
           const p = easeOutCubic(clamp(elapsed / WATER_DUR));
           const compH = compTarget * p;
           if (compH>0){
             const area={x:0,y:h - sandTarget - compH,w:w,h:compH};
-            const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null; // subtle red
+            const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null; // minimal red
             drawWater(area, tint);
           }
           const overH = overTarget * p;
@@ -567,6 +558,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
       requestAnimationFrame(start);
       return { cancel, start };
     }
+
 
     // Views
     const views={menu:document.getElementById('view-menu'),calendar:document.getElementById('view-calendar'),logger:document.getElementById('view-logger')};
@@ -946,8 +938,21 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
     const ts = LS.getItem('hourlogger.lastPushAt') || '';
     document.querySelectorAll('.quick-sync [data-last-push]').forEach(el=> el.textContent = 'Last push: ' + humanize(ts));
   }
-  function ensureQuickSync(){}
-  /* footer handles quick sync UI */
+  function ensureQuickSync(){
+    document.querySelectorAll('.version').forEach(verEl=>{
+      if (verEl.nextElementSibling && verEl.nextElementSibling.classList && verEl.nextElementSibling.classList.contains('quick-sync')) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'quick-sync';
+      wrap.innerHTML = '<div class="last"><span data-last-push>Last push: —</span></div>' +
+                       '<div class="qs-actions">' +
+                       '<button class="btn small primary" data-action="push-now">Push now</button>' +
+                       '<button class="btn small" data-action="load-now">Load from GitHub</button>' +
+                       '</div>';
+      verEl.after(wrap);
+    });
+    updateLastPushTexts();
+  }
+  ensureQuickSync();
   document.addEventListener('hourlogger:view', ensureQuickSync);
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-action]'); if(!btn) return;
@@ -993,82 +998,7 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       }
     }catch(_){}
   },0);
-  document.documentElement.setAttribute('data-app-version','v67');
-})();
-</script>
-
-
-  <footer id="appFooter" class="app-footer fx-top">
-    <div class="app-footer-inner">
-      <div class="version-label">Hour Logger 73 • <span id="lastPushLabel">Last push: —</span></div>
-      <div class="qs-actions">
-        <button class="btn small primary" id="btnPushNow">Push now</button>
-        <button class="btn small" id="btnLoadNow">Load from GitHub</button>
-      </div>
-    </div>
-  </footer>
-
-
-<script>
-// v73 footer quick actions
-(function(){
-  function humanize(ts){
-    if(!ts) return '—';
-    try{ const d=new Date(ts); if(isNaN(d.getTime())) return '—'; return d.toLocaleString(); }catch(_){ return '—'; }
-  }
-  function getPrefs(){ try{ return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); }catch(_){ return {}; } }
-  function updateLastPush(){
-    const el = document.getElementById('lastPushLabel');
-    if(el) el.textContent = 'Last push: ' + humanize(localStorage.getItem('hourlogger.lastPushAt')||'');
-  }
-  updateLastPush();
-  document.addEventListener('hourlogger:saved', updateLastPush);
-
-  const bLoad=document.getElementById('btnLoadNow');
-  if(bLoad){ bLoad.addEventListener('click', e=>{ e.preventDefault(); if(window.doLoad) window.doLoad(); }); }
-
-  async function pushNow(){
-    try{
-      const p = getPrefs();
-      if(p && p.token && p.owner && p.repo){
-        const headers = { 'Authorization':'token '+p.token, 'Accept':'application/vnd.github+json' };
-        const getUrl  = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}?ref=${encodeURIComponent(p.branch||'main')}`;
-        const r1 = await fetch(getUrl, { headers, cache:'no-store' });
-        const meta = r1.ok ? await r1.json() : null;
-        const sha = meta && meta.sha ? meta.sha : undefined;
-        const content = localStorage.getItem('hourlogger.data') || JSON.stringify(window.state||{});
-        const putUrl = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}`;
-        const body = { message:'Hour Logger push', content:btoa(unescape(encodeURIComponent(content))), branch:(p.branch||'main') };
-        if(sha) body.sha = sha;
-        const r2 = await fetch(putUrl, { method:'PUT', headers, body: JSON.stringify(body) });
-        if(!r2.ok) throw new Error('Push failed: '+r2.status);
-      } else if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
-        await window.hourloggerCloud.saveSilently();
-      } else {
-        alert('Cloud sync is not configured.'); return;
-      }
-      localStorage.setItem('hourlogger.lastPushAt', new Date().toISOString());
-      updateLastPush();
-      if (typeof toast==='function') toast('Pushed to GitHub');
-    }catch(err){ console.error(err); alert('Push failed. Check owner/repo/path and token.'); }
-  }
-  const bPush=document.getElementById('btnPushNow');
-  if(bPush){ bPush.addEventListener('click', e=>{ e.preventDefault(); pushNow(); }); }
-
-  // Stamp last push after silent background pushes
-  setTimeout(()=>{
-    try{
-      if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
-        const orig = window.hourloggerCloud.saveSilently;
-        window.hourloggerCloud.saveSilently = async function(){
-          try{ await orig(); } finally{
-            localStorage.setItem('hourlogger.lastPushAt', new Date().toISOString());
-            updateLastPush();
-          }
-        }
-      }
-    }catch(_){}
-  },0);
+  document.documentElement.setAttribute('data-app-version','v73');
 })();
 </script>
 
