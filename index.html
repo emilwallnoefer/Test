@@ -159,17 +159,17 @@ html, body { overflow-x: hidden; }
 #breaksPane{ width:100%; max-height:300px; overflow:auto; }
 .break-item{ display:grid; gap:8px; width:100%; margin:10px 0; }
 .break-item .bi-name-block input{ font-size:14px; padding:10px }
-.break-item .bi-dur{ display:grid; grid-template-columns:1fr 1fr; gap:8px }
-.break-item .bi-dur input{ width:100%; text-align:center; font-size:14px; padding:10px }
+.break-item .bi-times{ display:grid; grid-template-columns:1fr 1fr; gap:8px }
+.break-item .bi-times input{ width:100%; text-align:center; font-size:14px; padding:10px }
 .break-item .bi-remove{ width:100%; padding:10px 12px; }
 
 /* small phones */
 @media (max-width:420px){
-  .break-item .bi-dur{ gap:6px }
+  .break-item .bi-times{ gap:6px }
   .break-item .bi-name-block input, .break-item .bi-times input{ font-size:13px; padding:9px }
 }
 @media (max-width:360px){
-  .break-item .bi-dur{ grid-template-columns:1fr; }
+  .break-item .bi-times{ grid-template-columns:1fr; }
 }
 
 
@@ -220,7 +220,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 75</div>
+    <div class="version version-menu">Hour Logger 74</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -257,7 +257,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 75</div>
+    <div class="version">Hour Logger 74</div>
   </section>
 
   <!-- LOGGER -->
@@ -287,7 +287,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 75</div>
+    <div class="version">Hour Logger 74</div>
   </section>
 
   <!-- Focus bubble -->
@@ -316,7 +316,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "75";
+    const APP_VERSION = "74";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -712,63 +712,27 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     function parseHHMM(t){ const [h,m]=t.split(':').map(Number); return h*60+m; }
     function validTime(t){ return /^\\d{2}:\\d{2}$/.test(t); }
     const breaksPane=document.getElementById('breaksPane');
-    function computeTotal(){
-      const a=document.getElementById('startTime').value.trim(), b=document.getElementById('stopTime').value.trim();
-      if(!validTime(a)||!validTime(b)){ var __ct=document.getElementById('computedTotal'); if(__ct){ __ct.textContent='0h 00m'; } return 0; }
-      let work=parseHHMM(b)-parseHHMM(a); if(work<0) work+=24*60;
-      let bt=0;
-      breaksPane.querySelectorAll('.break-item').forEach(it=>{
-        const h=parseInt(it.querySelector('.bi-h')?.value||'0',10)||0;
-        const m=parseInt(it.querySelector('.bi-m')?.value||'0',10)||0;
-        let mins=h*60+m;
-        const s=it.querySelector('.bi-start')?.value?.trim()||'';
-        const e=it.querySelector('.bi-stop')?.value?.trim()||'';
-        if(mins<=0 && /^\d{2}:\d{2}$/.test(s) && /^\d{2}:\d{2}$/.test(e)){
-          let mm=parseHHMM(e)-parseHHMM(s); if(mm<0) mm+=24*60; mins=mm;
-        }
-        if(mins>0) bt+=mins;
-      });
-      const net=Math.max(0,work-bt);
-      var __ct2=document.getElementById('computedTotal'); if(__ct2){ __ct2.textContent=fmtHM(net); }
-      return net;
-    }
-    function addBreakRow(i={name:'', mins:0, start:'', stop:''}){
-      let mins = i.mins||0;
-      if(!mins && i.start && i.stop && /^\d{2}:\d{2}$/.test(i.start) && /^\d{2}:\d{2}$/.test(i.stop)){
-        let mm=parseHHMM(i.stop)-parseHHMM(i.start); if(mm<0) mm+=24*60; mins = Math.max(0,mm);
-      }
-      const H = Math.floor((mins||0)/60), M = (mins||0)%60;
+    function computeTotal(){ const a=document.getElementById('startTime').value.trim(), b=document.getElementById('stopTime').value.trim(); if(!validTime(a)||!validTime(b)){ var __ct=document.getElementById('computedTotal'); if(__ct){ __ct.textContent='0h 00m'; } return 0; }
+      let work=parseHHMM(b)-parseHHMM(a); if(work<0) work+=24*60; let bt=0; breaksPane.querySelectorAll('.break-item').forEach(it=>{ const s=it.querySelector('.bi-start').value.trim(), e=it.querySelector('.bi-stop').value.trim(); if(validTime(s)&&validTime(e)){ let m=parseHHMM(e)-parseHHMM(s); if(m>0) bt+=m; }});
+      const net=Math.max(0,work-bt); if (document.getElementById('computedTotal')) var __ct2=document.getElementById('computedTotal'); if(__ct2){ __ct2.textContent=fmtHM(net); } return net; }
+    function addBreakRow(i={name:'',start:'',stop:''}){
       const row=document.createElement('div'); row.className='break-item';
       row.innerHTML = `
         <div class="bi-name-block">
           <label>Name</label>
           <input type="text" class="bi-name" value="${i.name||''}" placeholder="Name">
         </div>
-        <div class="bi-dur">
-          <div><label>Hours</label><input type="number" class="bi-h" min="0" step="1" value="${H}"></div>
-          <div><label>Minutes</label><input type="number" class="bi-m" min="0" max="59" step="1" value="${M}"></div>
+        <div class="bi-times">
+          <div><label>Start</label><input type="time" class="bi-start" value="${i.start||''}"></div>
+          <div><label>Stop</label><input type="time" class="bi-stop" value="${i.stop||''}"></div>
         </div>
         <div><button class="btn small bi-remove">Remove break</button></div>`;
       breaksPane.appendChild(row);
       const onChange=()=>computeTotal();
       row.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',onChange));
-      row.querySelector('.bi-remove').addEventListener('click',()=>{ row.remove(); computeTotal(); });
-      computeTotal();
-    }); computeTotal(); }
-    function clearLoggerFor(ds){
-      document.getElementById('startTime').value='';
-      document.getElementById('stopTime').value='';
-      breaksPane.innerHTML='';
-      var __ct=document.getElementById('computedTotal'); if(__ct){ __ct.textContent='0h 00m'; }
-      const w=state.work[ds];
-      document.getElementById('holidayFlag').checked=!!(w&&w.holiday);
-      if(w){
-        document.getElementById('startTime').value=w.start||'';
-        document.getElementById('stopTime').value=w.stop||'';
-        (w.breaks||[]).forEach(b=>addBreakRow(b));
-        computeTotal();
-      }
-    } }
+      row.querySelector('.bi-remove').addEventListener('click',()=>{ row.remove(); computeTotal(); }); computeTotal(); }
+    function clearLoggerFor(ds){ document.getElementById('startTime').value=''; document.getElementById('stopTime').value=''; breaksPane.innerHTML=''; var __ct=document.getElementById('computedTotal'); if(__ct){ __ct.textContent='0h 00m'; } const w=state.work[ds]; document.getElementById('holidayFlag').checked=!!(w&&w.holiday);
+      if(w){ document.getElementById('startTime').value=w.start||''; document.getElementById('stopTime').value=w.stop||''; (w.breaks||[]).forEach(b=>addBreakRow(b)); computeTotal(); } }
     function renderLogger(){ const input=document.getElementById('logDate'); if(!input.value) input.value=toDateStr(new Date()); clearLoggerFor(input.value); }
     document.getElementById('logDate').addEventListener('change',e=>clearLoggerFor(e.target.value));
     document.getElementById('btnStartNow').addEventListener('click',()=>{document.getElementById('startTime').value=nowHHMM(); computeTotal();});
@@ -776,16 +740,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     document.getElementById('btnAddBreak').addEventListener('click',()=>addBreakRow());
     document.getElementById('startTime').addEventListener('input',computeTotal); document.getElementById('stopTime').addEventListener('input',computeTotal);
     document.getElementById('btnSave').addEventListener('click',()=>{ const ds=document.getElementById('logDate').value||toDateStr(new Date()); const a=document.getElementById('startTime').value.trim(), b=document.getElementById('stopTime').value.trim(); if(!/^\d{2}:\d{2}$/.test(a)||!/^\d{2}:\d{2}$/.test(b)){ /* allow empty save */ }
-      const net=computeTotal(); const breaks=[]; document.querySelectorAll('#breaksPane .break-item').forEach(it=>{
-        const name = it.querySelector('.bi-name')?.value.trim() || '';
-        const h = parseInt(it.querySelector('.bi-h')?.value||'0',10)||0;
-        const m = parseInt(it.querySelector('.bi-m')?.value||'0',10)||0;
-        const s = it.querySelector('.bi-start')?.value?.trim()||'';
-        const e = it.querySelector('.bi-stop')?.value?.trim()||'';
-        let mins = h*60 + m;
-        if(mins<=0 && /^\d{2}:\d{2}$/.test(s) && /^\d{2}:\d{2}$/.test(e)){ let mm=parseHHMM(e)-parseHHMM(s); if(mm<0) mm+=24*60; mins=Math.max(0,mm); }
-        breaks.push({name, mins});
-      });
+      const net=computeTotal(); const breaks=[]; document.querySelectorAll('#breaksPane .break-item').forEach(it=>breaks.push({name:it.querySelector('.bi-name').value.trim(),start:it.querySelector('.bi-start').value.trim(),stop:it.querySelector('.bi-stop').value.trim()}));
       const holiday=document.getElementById('holidayFlag').checked; state.work[ds]={start:a,stop:b,breaks,netMins:net,holiday}; save(); renderMenu(); renderWeek(); toast('Day saved'); show('calendar'); });
     document.getElementById('btnResetWork').addEventListener('click',()=>{ const ds=document.getElementById('logDate').value||toDateStr(new Date()); if(state.work[ds]) delete state.work[ds]; if(state.comp[ds]) delete state.comp[ds]; save(); clearLoggerFor(ds); renderMenu(); renderWeek(); toast('Day reset'); });
 
@@ -813,7 +768,7 @@ setTimeout(positionBubbleLayout, 100);
 window.addEventListener('resize', positionBubbleLayout, { once: true });
 
       const wObj = state.work[ds]||{};
-      document.getElementById('dBreaks').textContent= (wObj.breaks||[]).map(b=>{ const mins = (typeof b.mins==='number')?b.mins: (b.start&&b.stop?/^\d{2}:\d{2}$/.test(b.start)&&/^\d{2}:\d{2}$/.test(b.stop)?(function(){ let mm=parseHHMM(b.stop)-parseHHMM(b.start); if(mm<0) mm+=24*60; return mm; })():0:0); return `${b.name||'Break'} ${fmtHM(mins)}`; }).join(', ') || '—';
+      document.getElementById('dBreaks').textContent= (wObj.breaks||[]).map(b=>`${b.name||'Break'} ${b.start}-${b.stop}`).join(', ') || '—';
       document.getElementById('dWorked').textContent= fmtHM(worked);
       document.getElementById('dCompUsed').textContent= fmtHM(compUsed);
       document.getElementById('dOver').textContent  = fmtHM(Math.max(0,overtime));
