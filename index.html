@@ -178,13 +178,13 @@ html, body { overflow-x: hidden; }
     .quick-sync .qs-actions{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
     
 
-    .app-footer{ position:fixed; inset-inline:0; bottom:0; z-index:9;
-      padding:8px calc(var(--pad)); background:#0f1118dd;
-      border-top:1px solid var(--stroke); backdrop-filter:saturate(180%) blur(8px); }
+    .app-footer{ position:fixed; left:0; right:0; bottom:0; z-index:9;
+      padding:8px calc(var(--pad)); background:#0f1118dd; border-top:1px solid var(--stroke); backdrop-filter:saturate(180%) blur(8px); }
     .app-footer-inner{ display:grid; gap:6px; justify-items:center }
     .app-footer .version-label{ color:var(--muted); font-size:11px }
-    /* Ensure content never hides under footer */
-    .view{ padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 110px) !important; }
+    .app-footer .qs-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center }
+    /* ensure content does not hide under footer */
+    .view{ padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 112px); }
 
 </style>
 </head>
@@ -382,22 +382,20 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
 
     
     
-    // Sand + Water renderer v73 (sequential + easing, textured sand, tints, seagrass)
+    // Sand + Water renderer v73 (sequential + easing, textured sand, green/red tints, seagrass)
     function SandWater(canvas, worked, compUsed, overtime){
       const ctx = canvas.getContext('2d');
       let raf=0, t=0, DPR=1, w=0, h=0;
       const bubblesBottom=[], bubblesTop=[];
 
-      // Easing helpers
+      // Easing
       const clamp=(x,min=0,max=1)=>Math.max(min,Math.min(max,x));
       const easeOutCubic = p => 1 - Math.pow(1 - p, 3);
       const easeInOutCubic = p => (p<.5) ? 4*p*p*p : 1 - Math.pow(-2*p+2,3)/2;
 
-      // Phase timing (ms)
-      const SAND_DUR = 900;
-      const WATER_DUR = 800;
-      let phase = 0; // 0=sand, 1=water, 2=done
-      let phaseStart = performance.now();
+      // Sequencing
+      const SAND_DUR = 900, WATER_DUR = 800;
+      let phase = 0, phaseStart = performance.now(); // 0=sand,1=water,2=done
 
       function size(){
         DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
@@ -431,13 +429,13 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           ctx.fillStyle = `rgba(120,100,60,${a})`;
           ctx.fillRect(nx,ny,1,1);
         }
-        // Larger speckles
+        // Speckles
         for(let i=0;i<Math.floor(w*(h-topY)*0.00008);i++){
           const nx=Math.random()*w, ny=topY+Math.random()*(h-topY);
           ctx.fillStyle='rgba(90,70,30,0.22)';
           ctx.beginPath(); ctx.arc(nx,ny,Math.random()*1.8+0.5,0,Math.PI*2); ctx.fill();
         }
-        // Soft dune ridges
+        // Dune ridges
         ctx.fillStyle='rgba(255,255,255,0.06)';
         for(let r=0;r<4;r++){
           ctx.beginPath();
@@ -459,6 +457,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         grdW.addColorStop(0,WATER_BASE_TOP);
         grdW.addColorStop(1,WATER_BASE_BOT);
         ctx.fillStyle=grdW; ctx.fillRect(area.x,area.y,area.w,area.h);
+
         const arr = (area.y > h*0.5) ? bubblesTop : bubblesBottom;
         if(arr.length<28) spawn(arr, area, 2);
         for(let i=arr.length-1;i>=0;i--){
@@ -513,21 +512,21 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         const elapsed = now - phaseStart;
 
         if (phase === 0){
-          // Sand first (eased)
+          // Sand first with easing
           const p = easeInOutCubic(clamp(elapsed / SAND_DUR));
           const sandH = sandTarget * p;
           const sandTop = h - sandH;
           if (sandH > 0) drawSand(sandTop);
           if (p >= 1){ phase = 1; phaseStart = performance.now(); }
         } else if (phase === 1){
-          // Water only after sand finished
+          // After sand done, water rises with easing
           const sandTop = h - sandTarget;
           if (sandTarget>0) drawSand(sandTop);
           const p = easeOutCubic(clamp(elapsed / WATER_DUR));
           const compH = compTarget * p;
           if (compH>0){
             const area={x:0,y:h - sandTarget - compH,w:w,h:compH};
-            const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null; // minimal red
+            const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null; // subtle red
             drawWater(area, tint);
           }
           const overH = overTarget * p;
@@ -539,7 +538,7 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
           }
           if (p >= 1){ phase = 2; }
         } else {
-          // Done: steady state
+          // Steady state
           const sandTop = h - sandTarget;
           if (sandTarget>0) drawSand(sandTop);
           if (compTarget>0){
@@ -872,7 +871,134 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 })();
   </script>
 
-<footer id="appFooter" class="app-footer fx-top">
+<!-- v67 overrides & quick sync -->
+<script>
+(() => {
+  const LS=localStorage, SS=sessionStorage;
+  function id(x){ return document.getElementById(x); }
+  function getPrefs(){
+    try {
+      const p = JSON.parse(LS.getItem('hourlogger.sync')||'{}');
+      return {
+        owner: p.owner|| (id('ghOwner')&&id('ghOwner').value.trim()) || '',
+        repo:  p.repo || (id('ghRepo') &&id('ghRepo').value.trim())  || '',
+        branch:p.branch|| (id('ghBranch')&&id('ghBranch').value.trim())||'main',
+        path:  p.path || (id('ghPath')  &&id('ghPath').value.trim())  || 'data/hourlogger-data.json',
+        token: p.token|| (id('ghToken') &&id('ghToken').value.trim()) || ''
+      };
+    } catch(_) {
+      return { owner:'', repo:'', branch:'main', path:'data/hourlogger-data.json', token:'' };
+    }
+  }
+  async function clearCaches(){
+    try{
+      if(navigator.serviceWorker?.controller){
+        navigator.serviceWorker.controller.postMessage({type:'clearCaches'});
+      }
+      if('caches' in window){
+        const ks=await caches.keys();
+        await Promise.all(ks.map(k=>caches.delete(k)));
+      }
+    }catch(_){}
+  }
+  async function fetchJSONWithToken(p){
+    if(p.token){
+      const url = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}?ref=${encodeURIComponent(p.branch)}`;
+      const r = await fetch(url, { headers: { 'Authorization': 'token ' + p.token, 'Accept': 'application/vnd.github+json' }, cache:'no-store' });
+      if(!r.ok) throw new Error('GitHub API failed: ' + r.status);
+      const meta = await r.json();
+      const text = atob(String(meta.content||'').replace(/\n/g,''));
+      return JSON.parse(text);
+    } else {
+      const rawUrl = `https://raw.githubusercontent.com/${p.owner}/${p.repo}/${p.branch}/${p.path}`;
+      const r = await fetch(rawUrl, { cache:'no-store' });
+      if(!r.ok) throw new Error('Raw fetch failed: ' + r.status);
+      return await r.json();
+    }
+  }
+  function hardReload(){
+    const u = new URL(location.href); u.searchParams.set('__hr', Date.now().toString()); location.replace(u.toString());
+  }
+  // v67 Save SETTINGS ONLY
+  window.doSave = function(){
+    const p=getPrefs();
+    if(!p.owner || !p.repo || !p.path){ alert('Please fill owner, repo and path.'); return; }
+    LS.setItem('hourlogger.sync', JSON.stringify(p));
+    if (window.toast) window.toast('Cloud sync settings saved (no push).');
+  };
+  // v67 Load: clear caches -> write -> hard refresh
+  window.doLoad = async function(){
+    const p=getPrefs();
+    if(!p.owner || !p.repo || !p.path){ alert('Missing owner/repo/path'); return; }
+    try{
+      const prev = LS.getItem('hourlogger.data'); if(prev) LS.setItem('hourlogger.backup', prev);
+      const data = await fetchJSONWithToken(p);
+      await clearCaches();
+      LS.setItem('hourlogger.data', JSON.stringify(data||{}));
+      SS.setItem('hourlogger.justLoaded','1');
+      if (navigator.serviceWorker?.controller){ navigator.serviceWorker.controller.postMessage({type:'SKIP_WAITING'}); }
+      setTimeout(hardReload, 120);
+    }catch(e){ console.error(e); alert('Load failed. Check repo/branch/path and token (if private).'); }
+  };
+  // Quick Sync UI
+  function humanize(ts){ if(!ts) return '—'; try{ const d=new Date(ts); if(isNaN(d.getTime())) return '—'; return d.toLocaleString(); }catch(_){ return '—'; } }
+  function updateLastPushTexts(){
+    const ts = LS.getItem('hourlogger.lastPushAt') || '';
+    document.querySelectorAll('.quick-sync [data-last-push]').forEach(el=> el.textContent = 'Last push: ' + humanize(ts));
+  }
+  function ensureQuickSync(){}
+  /* footer handles quick sync UI */
+  document.addEventListener('hourlogger:view', ensureQuickSync);
+  document.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('[data-action]'); if(!btn) return;
+    const act = btn.getAttribute('data-action');
+    if(act==='load-now'){ e.preventDefault(); if(window.doLoad) return window.doLoad(); }
+    if(act==='push-now'){ e.preventDefault();
+      try{
+        const p = getPrefs();
+        if(p && p.token && p.owner && p.repo){
+          const headers = { 'Authorization':'token '+p.token, 'Accept':'application/vnd.github+json' };
+          const getUrl  = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}?ref=${encodeURIComponent(p.branch||'main')}`;
+          const r1 = await fetch(getUrl, { headers, cache:'no-store' });
+          const meta = r1.ok ? await r1.json() : null;
+          const sha = meta && meta.sha ? meta.sha : undefined;
+          const content = LS.getItem('hourlogger.data') || JSON.stringify(window.state||{});
+          const putUrl = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}`;
+          const body = { message:'Hour Logger push', content:btoa(unescape(encodeURIComponent(content))), branch:(p.branch||'main') };
+          if(sha) body.sha = sha;
+          const r2 = await fetch(putUrl, { method:'PUT', headers, body: JSON.stringify(body) });
+          if(!r2.ok) throw new Error('Push failed: '+r2.status);
+        } else if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
+          await window.hourloggerCloud.saveSilently();
+        } else {
+          alert('Cloud sync is not configured.'); return;
+        }
+        LS.setItem('hourlogger.lastPushAt', new Date().toISOString());
+        if (typeof toast==='function') toast('Pushed to GitHub');
+        updateLastPushTexts();
+      }catch(err){ console.error(err); alert('Push failed. Check owner/repo/path and token.'); }
+    }
+  });
+  // Wrap existing silent push to also stamp lastPushAt
+  setTimeout(()=>{
+    try{
+      if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
+        const orig = window.hourloggerCloud.saveSilently;
+        window.hourloggerCloud.saveSilently = async function(){
+          try{ await orig(); } finally{
+            localStorage.setItem('hourlogger.lastPushAt', new Date().toISOString());
+            updateLastPushTexts();
+          }
+        }
+      }
+    }catch(_){}
+  },0);
+  document.documentElement.setAttribute('data-app-version','v67');
+})();
+</script>
+
+
+  <footer id="appFooter" class="app-footer fx-top">
     <div class="app-footer-inner">
       <div class="version-label">Hour Logger 73 • <span id="lastPushLabel">Last push: —</span></div>
       <div class="qs-actions">
@@ -884,24 +1010,20 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 
 
 <script>
-// v73 footer quick-sync + last push text
+// v73 footer quick actions
 (function(){
   function humanize(ts){
     if(!ts) return '—';
     try{ const d=new Date(ts); if(isNaN(d.getTime())) return '—'; return d.toLocaleString(); }catch(_){ return '—'; }
   }
-  function getPrefs(){
-    try{ return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); }catch(_){ return {}; }
-  }
+  function getPrefs(){ try{ return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); }catch(_){ return {}; } }
   function updateLastPush(){
     const el = document.getElementById('lastPushLabel');
-    if(!el) return;
-    el.textContent = 'Last push: ' + humanize(localStorage.getItem('hourlogger.lastPushAt') || '');
+    if(el) el.textContent = 'Last push: ' + humanize(localStorage.getItem('hourlogger.lastPushAt')||'');
   }
   updateLastPush();
   document.addEventListener('hourlogger:saved', updateLastPush);
 
-  const bPush=document.getElementById('btnPushNow');
   const bLoad=document.getElementById('btnLoadNow');
   if(bLoad){ bLoad.addEventListener('click', e=>{ e.preventDefault(); if(window.doLoad) window.doLoad(); }); }
 
@@ -930,9 +1052,10 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       if (typeof toast==='function') toast('Pushed to GitHub');
     }catch(err){ console.error(err); alert('Push failed. Check owner/repo/path and token.'); }
   }
+  const bPush=document.getElementById('btnPushNow');
   if(bPush){ bPush.addEventListener('click', e=>{ e.preventDefault(); pushNow(); }); }
 
-  // Stamp last push after silent pushes too
+  // Stamp last push after silent background pushes
   setTimeout(()=>{
     try{
       if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
