@@ -17,7 +17,7 @@
     *{box-sizing:border-box}
     html,body{height:100%}
     body{margin:0;font-family:-apple-system,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);position:relative;overflow-x:hidden}
-    #fxCanvas{position:fixed;inset:0;z-index:0;pointer-events:none;filter:blur(10px)}
+    #fxCanvas{position:fixed;inset:0;z-index:0;pointer-events:none;filter:blur(2px)}
     .fx-top{position:relative;z-index:1;width:100%;margin:0 auto}
 
     .topbar{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:calc(10px + env(safe-area-inset-top, 0px)) var(--pad) 10px var(--pad);background:#0f1118aa;border-bottom:1px solid var(--stroke);backdrop-filter:saturate(180%) blur(8px);z-index:10}
@@ -62,7 +62,7 @@
     /* Focus bubble and details */
     .focus-layer{position:fixed;inset:0;display:none;z-index:50}
     .focus-layer.active{display:block}
-    .backdrop{position:absolute;inset:0;background:#0007;backdrop-filter:blur(10px) saturate(120%)}
+    .backdrop{position:absolute;inset:0;background:#0007;backdrop-filter:blur(2px) saturate(120%)}
     .bubble-date{ position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 0; right: 0; text-align:center; font-weight:800; z-index:52 }
     .bubble{position:fixed;border-radius:16px;background:radial-gradient(120% 140% at 20% 10%,rgba(255,255,255,.06),transparent 60%),var(--card);border:1px solid var(--stroke);box-shadow:0 30px 100px #0006,0 0 60px rgba(91,140,255,.15);overflow:hidden;animation:gel .5s cubic-bezier(.2,.8,.2,1) both; z-index:52 }
     @keyframes gel{0%{filter:saturate(.9) blur(.35px)}40%{filter:saturate(1.05) blur(.2px)}100%{filter:saturate(1) blur(0)}}
@@ -225,7 +225,7 @@ html, body { overflow-x: hidden; }
 
   <!-- Cloud Sync Panel -->
   <div id="syncPanel" style="display:none; position:fixed; inset:0; z-index:70;">
-    <div id="syncBackdrop" style="position:absolute; inset:0; background:#0007; backdrop-filter:blur(10px)"></div>
+    <div id="syncBackdrop" style="position:absolute; inset:0; background:#0007; backdrop-filter:blur(2px)"></div>
     <div style="position:fixed; left:16px; right:16px; top:calc(env(safe-area-inset-top,0px) + 64px); background:var(--card); border:1px solid var(--stroke); border-radius:14px; padding:14px; box-shadow:0 24px 80px #0008;">
       <div style="font-weight:800; margin-bottom:8px;">Cloud sync (GitHub)</div>
       <div style="display:grid; gap:8px;">
@@ -380,17 +380,25 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     const fx=document.getElementById('fxCanvas'),ctxFX=fx.getContext('2d'); let DPR=Math.max(1,Math.min(2,window.devicePixelRatio||1)),W=0,H=0;
     let rays=[], bubbles=[];
     function resizeFX(){W=fx.width=Math.floor(innerWidth*DPR);H=fx.height=Math.floor(innerHeight*DPR);fx.style.width=innerWidth+'px';fx.style.height=innerHeight+'px';}
+    
     function initRays(){
-      const n=5; rays=[];
+      const n = 6;
+      rays = [];
       for(let i=0;i<n;i++){
+        const spread = i/(n-1 || 1);
         rays.push({
-          x: Math.random()*W*0.3,
-          y: -H*0.2 - Math.random()*H*0.3,
-          w: (80+Math.random()*120)*DPR,
-          a: 0.05 + Math.random()*0.08,
-          s: 0.2 + Math.random()*0.5,
-          o: 0.05 + Math.random()*0.07
+          sx: ( -0.08*W + spread * 0.18*W ),
+          sy: ( -0.10*H + Math.random()*0.08*H ),
+          theta: (Math.PI/4) + (Math.random()*0.12 - 0.06),
+          len: Math.hypot(W,H) * (0.9 + Math.random()*0.2),
+          w: (50 + Math.random()*90) * DPR,
+          core: 0.12 + Math.random()*0.08,
+          fall: 0.6 + Math.random()*0.2,
+          sway: (0.002 + Math.random()*0.004)
         });
+      }
+    }
+    );
       }
     }
     function initBubbles(){
@@ -407,13 +415,43 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         });
       }
     }
+    
     function drawRays(t){
       for(const r of rays){
-        // gentle sway
-        const sway = Math.sin(t*0.0006 + r.x*0.0002)*r.w*0.15;
-        const x0 = r.x + sway;
-        const grad = ctxFX.createLinearGradient(x0, 0, x0, H);
-        grad.addColorStop(0, `rgba(120,200,255,${r.o})`);
+        const ang = r.theta + Math.sin(t * r.sway) * 0.02;
+        const dx = Math.cos(ang), dy = Math.sin(ang);
+        const ex = r.sx + dx * r.len;
+        const ey = r.sy + dy * r.len;
+        const grad = ctxFX.createLinearGradient(r.sx, r.sy, ex, ey);
+        grad.addColorStop(0, `rgba(150,220,255,${r.core})`);
+        grad.addColorStop(r.fall, `rgba(150,220,255,${r.core*0.25})`);
+        grad.addColorStop(1, `rgba(150,220,255,0)`);
+        ctxFX.save();
+        ctxFX.globalCompositeOperation='screen';
+        const nx = -dy, ny = dx;
+        const w = r.w;
+        const x0 = r.sx + nx * w, y0 = r.sy + ny * w;
+        const x1 = r.sx - nx * w, y1 = r.sy - ny * w;
+        const x2 = ex   - nx * (w*1.8), y2 = ey   - ny * (w*1.8);
+        const x3 = ex   + nx * (w*1.8), y3 = ey   + ny * (w*1.8);
+        ctxFX.fillStyle = grad;
+        ctxFX.beginPath();
+        ctxFX.moveTo(x0, y0);
+        ctxFX.lineTo(x1, y1);
+        ctxFX.lineTo(x2, y2);
+        ctxFX.lineTo(x3, y3);
+        ctxFX.closePath();
+        ctxFX.fill();
+        ctxFX.lineWidth = Math.max(1, w*0.25);
+        ctxFX.strokeStyle = `rgba(200,240,255,${r.core*0.35})`;
+        ctxFX.beginPath();
+        ctxFX.moveTo(r.sx, r.sy);
+        ctxFX.lineTo(ex, ey);
+        ctxFX.stroke();
+        ctxFX.restore();
+      }
+    }
+    )`);
         grad.addColorStop(1, `rgba(120,200,255,0)`);
         ctxFX.fillStyle = grad;
         ctxFX.globalCompositeOperation='screen';
