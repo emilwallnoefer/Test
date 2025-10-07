@@ -177,6 +177,16 @@ html, body { overflow-x: hidden; }
     .quick-sync .last{ color: var(--muted); font-size:11px; margin:6px 0 }
     .quick-sync .qs-actions{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
     
+
+    .app-footer{ position:fixed; left:0; right:0; bottom:0; z-index:9;
+      padding:8px calc(var(--pad)); background:rgba(10,12,18,.82);
+      border-top:1px solid var(--stroke); backdrop-filter:saturate(180%) blur(10px); }
+    .app-footer-inner{ display:grid; gap:6px; justify-items:center }
+    .app-footer .version-label{ color:var(--muted); font-size:11px }
+    .app-footer .qs-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center }
+    /* give room for footer */
+    .view{ padding-bottom: calc(env(safe-area-inset-bottom,0px) + 108px); }
+
 </style>
 </head>
 <body>
@@ -208,7 +218,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 67</div>
+    <div class="version version-menu">Hour Logger 68</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -245,7 +255,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 67</div>
+    <div class="version">Hour Logger 68</div>
   </section>
 
   <!-- LOGGER -->
@@ -275,7 +285,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 67</div>
+    <div class="version">Hour Logger 68</div>
   </section>
 
   <!-- Focus bubble -->
@@ -304,7 +314,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "67";
+    const APP_VERSION = "68";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -371,11 +381,21 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
     function drawFX(){ ctxFX.clearRect(0,0,W,H); ctxFX.globalCompositeOperation='lighter'; for(const p of particles){ p.a+=0.002*p.s; p.x+=Math.cos(p.a)*0.25*DPR; p.y+=Math.sin(p.a)*0.25*DPR; p.h=(p.h+0.06)%360; const g=ctxFX.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r); g.addColorStop(0,`hsla(${p.h},90%,60%,.16)`); g.addColorStop(1,`hsla(${(p.h+60)%360},90%,50%,0)`); ctxFX.fillStyle=g; ctxFX.beginPath(); ctxFX.arc(p.x,p.y,p.r,0,Math.PI*2); ctxFX.fill(); } requestAnimationFrame(drawFX); }
     addEventListener('resize',()=>{resizeFX();initParticles();}); resizeFX(); initParticles(); drawFX();
 
-    // Sand + water renderer (cracks removed)
-    function SandWater(canvas, worked, compUsed, overtime){
+    
+    // Sand + water renderer v68
+    function SandWater(canvas, worked, compUsed, overtime, opts={}){
       const ctx = canvas.getContext('2d');
       let raf=0, t=0, DPR=1, w=0, h=0;
       const bubblesBottom=[], bubblesTop=[];
+      let intro = 0; // 0..1 sand fill intro progress
+      let startedAt = performance.now();
+      const introDur = 900; // ms: sand first
+      const waterDelay = 250; // ms after sand starts
+      // Options
+      const SEA_GREEN = 'rgba(80,180,120,0.18)';
+      const SEA_RED   = 'rgba(220,60,60,0.12)';
+      const WATER_BASE_TOP = 'rgba(110,180,255,0.55)';
+      const WATER_BASE_BOT = 'rgba(30,90,180,0.75)';
 
       function size(){
         DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
@@ -385,57 +405,150 @@ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist();
         h = canvas.height = Math.floor(ch * DPR);
       }
       function spawn(arr, area, count){ for(let i=0;i<count;i++){ arr.push({ x: area.x + Math.random()*area.w, y: area.y + area.h + Math.random()*10, r: 1 + Math.random()*2, vy: -(0.15+Math.random()*0.35)*DPR, drift:(Math.random()*0.4-0.2)*DPR }); } }
-      function noise(y){ return (Math.sin(y*0.07 + t*0.8) + Math.sin(y*0.03 + t*0.6 + 2))/2; }
+      function n1(x,k){ return Math.sin(x*0.012 + t*k); }
+      function ridgeY(base,x,amp){ return base + n1(x,1.8)*amp + Math.sin(x*0.045 + t*1.1)*amp*0.35; }
+
+      function drawSand(areaY){
+        // Base gradient
+        const topY = areaY;
+        const grd = ctx.createLinearGradient(0, topY, 0, h);
+        grd.addColorStop(0,'#e3d3a9');
+        grd.addColorStop(1,'#bf9a63');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, topY, w, h-topY);
+
+        // Stipple (small dots like the provided image)
+        const grains = Math.floor(w*(h-topY)*0.0005);
+        for(let i=0;i<grains;i++){
+          const nx = Math.random()*w;
+          const ny = topY + Math.random()*(h-topY);
+          const a = 0.22 + Math.random()*0.25;
+          ctx.fillStyle = `rgba(120,100,60,${a})`;
+          ctx.fillRect(nx,ny,1,1);
+        }
+        // Larger speckles
+        for(let i=0;i<Math.floor(w*(h-topY)*0.00008);i++){
+          const nx=Math.random()*w, ny=topY+Math.random()*(h-topY);
+          ctx.fillStyle='rgba(90,70,30,0.22)';
+          ctx.beginPath(); ctx.arc(nx,ny,Math.random()*1.8+0.5,0,Math.PI*2); ctx.fill();
+        }
+        // Dune-like ridges (soft horizontal undulations)
+        ctx.fillStyle='rgba(255,255,255,0.06)';
+        for(let r=0;r<4;r++){
+          ctx.beginPath();
+          const base = topY + (h-topY)*(0.15 + r*0.18);
+          ctx.moveTo(0, ridgeY(base,0,2.5*DPR));
+          for(let x=0;x<=w;x+=3){
+            ctx.lineTo(x, ridgeY(base,x,2.5*DPR));
+          }
+          ctx.lineTo(w, base+2*DPR);
+          ctx.lineTo(0, base+2*DPR);
+          ctx.closePath(); ctx.fill();
+        }
+      }
+
+      function drawWater(area, tint){
+        // base water
+        const grdW=ctx.createLinearGradient(0,area.y,0,area.y+area.h);
+        grdW.addColorStop(0,WATER_BASE_TOP);
+        grdW.addColorStop(1,WATER_BASE_BOT);
+        ctx.fillStyle=grdW; ctx.fillRect(area.x,area.y,area.w,area.h);
+        // bubbles
+        const arr = (area.y > h*0.5) ? bubblesTop : bubblesBottom;
+        if(arr.length<28) spawn(arr, area, 2);
+        for(let i=arr.length-1;i>=0;i--){
+          const b=arr[i]; b.y+=b.vy; b.x+=Math.sin((t+i)*0.9)*0.22*DPR+b.drift;
+          ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fill();
+          if(b.y<area.y+3*DPR) arr.splice(i,1);
+        }
+        // surface shimmer
+        const waveY=area.y + 6*DPR + Math.sin(t*2.0)*2*DPR;
+        ctx.beginPath(); ctx.moveTo(0,waveY);
+        for(let x=0;x<=w;x+=4){
+          const y=waveY + Math.sin(x*0.045 + t*2.0)*2*DPR + Math.sin(x*0.03 + t*1.6)*1.2*DPR;
+          ctx.lineTo(x,y);
+        }
+        ctx.lineTo(w,area.y); ctx.lineTo(0,area.y); ctx.closePath();
+        ctx.fillStyle='rgba(255,255,255,0.07)'; ctx.fill();
+
+        // tint overlays
+        if (tint){
+          ctx.fillStyle = tint;
+          ctx.fillRect(area.x,area.y,area.w,area.h);
+        }
+      }
+
+      function drawSeagrass(area){
+        // simple Bezier blades swaying with waves
+        const blades = Math.max(3, Math.floor(area.w / (40*DPR)));
+        ctx.lineWidth = 2*DPR; ctx.strokeStyle = 'rgba(80,180,120,0.8)';
+        for(let i=0;i<blades;i++){
+          const x = i * (area.w/(blades-1));
+          const sway = Math.sin(t*1.8 + i)*10*DPR;
+          const baseX = x + sway*0.2;
+          const baseY = area.y + area.h - 2*DPR;
+          ctx.beginPath();
+          ctx.moveTo(area.x+baseX, baseY);
+          const midX = baseX + Math.sin(t*1.6 + i*0.8)*16*DPR;
+          const midY = baseY - area.h*0.55;
+          const tipX = baseX + Math.sin(t*1.9 + i)*22*DPR;
+          const tipY = baseY - area.h*0.92;
+          ctx.quadraticCurveTo(area.x+midX, midY, area.x+tipX, tipY);
+          ctx.stroke();
+        }
+      }
 
       function draw(){
         t += 0.016;
+        const now = performance.now();
+        const elapsed = now - startedAt;
+        intro = Math.max(0, Math.min(1, elapsed / introDur));
+
         ctx.clearRect(0,0,w,h);
         const half = h*0.5;
 
-        const sandH = Math.min(half, half * (worked / 504));
-        const compH = Math.min(Math.max(0, half - sandH), half * (compUsed / 504));
-        const overH = Math.min(half, half * (Math.max(0,overtime) / 504));
+        const sandTarget = Math.min(half, half * (worked / 504));
+        const compTarget = Math.min(Math.max(0, half - sandTarget), half * (compUsed / 504));
+        const overTarget = Math.min(half, half * (Math.max(0,overtime) / 504));
 
-        if (sandH>0){
-          const topY = h - sandH;
-          const grd = ctx.createLinearGradient(0, topY, 0, h); grd.addColorStop(0,'#daca9b'); grd.addColorStop(1,'#b8965b');
-          ctx.fillStyle = grd; ctx.fillRect(0, topY, w, h-topY);
-          for(let i=0;i<Math.floor(w*h*0.00035);i++){ const nx=Math.random()*w, ny=topY+Math.random()*(h-topY); ctx.fillStyle=`rgba(120,100,60,${Math.random()*0.35})`; ctx.fillRect(nx,ny,1,1);}
-          for(let i=0;i<Math.floor(w*h*0.00005);i++){ const nx=Math.random()*w, ny=topY+Math.random()*(h-topY); ctx.fillStyle='rgba(90,70,30,0.25)'; ctx.beginPath(); ctx.arc(nx,ny,Math.random()*1.6+0.4,0,Math.PI*2); ctx.fill(); }
-          ctx.beginPath(); ctx.moveTo(0, topY);
-          for(let x=0;x<=w;x+=3){ const y=topY - 3*DPR + noise(x)*3*DPR; ctx.lineTo(x,y); } ctx.lineTo(w, topY); ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.fill();
-        }
+        // Sand intro rises from bottom
+        const sandH = sandTarget * intro;
+        const sandTop = h - sandH;
+        if (sandH > 0) drawSand(sandTop);
 
+        // Water areas appear after a slight delay but still obey intro factor for a smooth build-up
+        const waterIntro = Math.max(0, Math.min(1, (elapsed - waterDelay) / (introDur*0.9)));
+        // Compensation water (bottom half) — tinted slightly red if compUsed>0
+        const compH = compTarget * waterIntro;
         if (compH>0){
-          const area={x:0,y:h - sandH - compH,w:w,h:compH}; const waveY=area.y + 6*DPR + Math.sin(t*1.8)*2*DPR;
-          const grdW=ctx.createLinearGradient(0,area.y,0,area.y+area.h); grdW.addColorStop(0,'rgba(100,180,255,0.55)'); grdW.addColorStop(1,'rgba(30,90,180,0.7)');
-          ctx.fillStyle=grdW; ctx.fillRect(area.x,area.y,area.w,area.h);
-          if(bubblesBottom.length<28) spawn(bubblesBottom, area, 2);
-          for(let i=bubblesBottom.length-1;i>=0;i--){ const b=bubblesBottom[i]; b.y+=b.vy; b.x+=Math.sin((t+i)*0.8)*0.2*DPR+b.drift; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fill(); if(b.y<area.y+4*DPR) bubblesBottom.splice(i,1); }
-          ctx.beginPath(); ctx.moveTo(0,waveY); for(let x=0;x<=w;x+=4){ const y=waveY + Math.sin(x*0.04 + t*2.2)*2*DPR + Math.sin(x*0.025 + t*1.7)*1.2*DPR; ctx.lineTo(x,y);} ctx.lineTo(w,area.y); ctx.lineTo(0,area.y); ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.fill();
+          const area={x:0,y:h - sandTarget - compH,w:w,h:compH};
+          const tint = compUsed>0 ? 'rgba(255,60,60,0.10)' : null;
+          drawWater(area, tint);
         }
-
+        // Overtime water (top half) — tinted slightly green if overtime>0, add seagrass
+        const overH = overTarget * waterIntro;
         if (overH>0){
-          const area={x:0,y:half - overH,w:w,h:overH}; const waveY=area.y + 6*DPR + Math.sin(t*2.0)*2*DPR;
-          const grdW2=ctx.createLinearGradient(0,area.y,0,area.y+area.h); grdW2.addColorStop(0,'rgba(120,200,255,0.55)'); grdW2.addColorStop(1,'rgba(10,70,160,0.75)');
-          ctx.fillStyle=grdW2; ctx.fillRect(area.x,area.y,area.w,area.h);
-          if(bubblesTop.length<20) spawn(bubblesTop, area, 1);
-          for(let i=bubblesTop.length-1;i>=0;i--){ const b=bubblesTop[i]; b.y+=b.vy; b.x+=Math.sin((t+i)*1.1)*0.25*DPR+b.drift; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fill(); if(b.y<area.y+2*DPR) bubblesTop.splice(i,1); }
-          ctx.beginPath(); ctx.moveTo(0,waveY); for(let x=0;x<=w;x+=4){ const y=waveY + Math.sin(x*0.05 + t*2.0)*2*DPR + Math.sin(x*0.03 + t*1.6)*1.2*DPR; ctx.lineTo(x,y);} ctx.lineTo(w,area.y); ctx.lineTo(0,area.y); ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.fill();
+          const area={x:0,y:half - overH,w:w,h:overH};
+          const tint = (overtime>0) ? 'rgba(60,200,120,0.12)' : null;
+          drawWater(area, tint);
+          if (overtime>0) drawSeagrass(area);
         }
 
-        // midline
-        const ctxLine = ctx; ctxLine.strokeStyle='rgba(255,255,255,0.06)'; ctxLine.lineWidth=1*DPR; ctxLine.beginPath(); ctxLine.moveTo(0,h*0.5); ctxLine.lineTo(w,h*0.5); ctxLine.stroke();
+        // Midline
+        ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1*DPR;
+        ctx.beginPath(); ctx.moveTo(0,half); ctx.lineTo(w,half); ctx.stroke();
 
         raf = requestAnimationFrame(draw);
       }
-      function start(){ cancel(); size(); raf = requestAnimationFrame(draw); }
+      function start(){ cancel(); size(); startedAt = performance.now(); raf = requestAnimationFrame(draw); }
       function cancel(){ if(raf) cancelAnimationFrame(raf); raf=0; }
       const ro = new ResizeObserver(()=>start()); ro.observe(canvas);
       requestAnimationFrame(start);
       return { cancel, start };
     }
 
+    // (old renderer removed)
+    
     // Views
     const views={menu:document.getElementById('view-menu'),calendar:document.getElementById('view-calendar'),logger:document.getElementById('view-logger')};
     function show(n){for(const v in views) views[v].classList.remove('active'); views[n].classList.add('active'); backBtn.style.visibility = (n==='menu') ? 'hidden' : 'visible'; if(n==='menu') renderMenu(); if(n==='calendar') renderWeek(); if(n==='logger') renderLogger();}
@@ -739,128 +852,68 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 })();
   </script>
 
-<!-- v67 overrides & quick sync -->
+
+
+
+  <footer id="appFooter" class="app-footer fx-top">
+    <div class="app-footer-inner">
+      <div class="version-label">Hour Logger 68 • <span id="lastPushLabel">Last push: —</span></div>
+      <div class="qs-actions">
+        <button class="btn small primary" id="btnPushNow">Push now</button>
+        <button class="btn small" id="btnLoadNow">Load from GitHub</button>
+      </div>
+    </div>
+  </footer>
+
+
 <script>
-(() => {
-  const LS=localStorage, SS=sessionStorage;
-  function id(x){ return document.getElementById(x); }
-  function getPrefs(){
-    try {
-      const p = JSON.parse(LS.getItem('hourlogger.sync')||'{}');
-      return {
-        owner: p.owner|| (id('ghOwner')&&id('ghOwner').value.trim()) || '',
-        repo:  p.repo || (id('ghRepo') &&id('ghRepo').value.trim())  || '',
-        branch:p.branch|| (id('ghBranch')&&id('ghBranch').value.trim())||'main',
-        path:  p.path || (id('ghPath')  &&id('ghPath').value.trim())  || 'data/hourlogger-data.json',
-        token: p.token|| (id('ghToken') &&id('ghToken').value.trim()) || ''
-      };
-    } catch(_) {
-      return { owner:'', repo:'', branch:'main', path:'data/hourlogger-data.json', token:'' };
-    }
+// v68 footer quick-sync + last push text
+(function(){
+  function humanize(ts){
+    if(!ts) return '—';
+    try{ const d=new Date(ts); if(isNaN(d.getTime())) return '—'; return d.toLocaleString(); }catch(_){ return '—'; }
   }
-  async function clearCaches(){
+  function updateLastPush(){
+    const el = document.getElementById('lastPushLabel');
+    if(!el) return;
+    el.textContent = 'Last push: ' + humanize(localStorage.getItem('hourlogger.lastPushAt') || '');
+  }
+  updateLastPush();
+  document.addEventListener('hourlogger:saved', updateLastPush);
+
+  const bPush=document.getElementById('btnPushNow');
+  const bLoad=document.getElementById('btnLoadNow');
+  if(bLoad){ bLoad.addEventListener('click', e=>{ e.preventDefault(); if(window.doLoad) window.doLoad(); }); }
+
+  async function pushNow(){
     try{
-      if(navigator.serviceWorker?.controller){
-        navigator.serviceWorker.controller.postMessage({type:'clearCaches'});
+      const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_){ return {}; } })();
+      if(p && p.token && p.owner && p.repo){
+        const headers = { 'Authorization':'token '+p.token, 'Accept':'application/vnd.github+json' };
+        const getUrl  = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}?ref=${encodeURIComponent(p.branch||'main')}`;
+        const r1 = await fetch(getUrl, { headers, cache:'no-store' });
+        const meta = r1.ok ? await r1.json() : null;
+        const sha = meta && meta.sha ? meta.sha : undefined;
+        const content = localStorage.getItem('hourlogger.data') || JSON.stringify(window.state||{});
+        const putUrl = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}`;
+        const body = { message:'Hour Logger push', content:btoa(unescape(encodeURIComponent(content))), branch:(p.branch||'main') };
+        if(sha) body.sha = sha;
+        const r2 = await fetch(putUrl, { method:'PUT', headers, body: JSON.stringify(body) });
+        if(!r2.ok) throw new Error('Push failed: '+r2.status);
+      } else if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
+        await window.hourloggerCloud.saveSilently();
+      } else {
+        alert('Cloud sync is not configured.');
+        return;
       }
-      if('caches' in window){
-        const ks=await caches.keys();
-        await Promise.all(ks.map(k=>caches.delete(k)));
-      }
-    }catch(_){}
+      localStorage.setItem('hourlogger.lastPushAt', new Date().toISOString());
+      updateLastPush();
+      if (typeof toast==='function') toast('Pushed to GitHub');
+    }catch(err){ console.error(err); alert('Push failed. Check owner/repo/path and token.'); }
   }
-  async function fetchJSONWithToken(p){
-    if(p.token){
-      const url = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}?ref=${encodeURIComponent(p.branch)}`;
-      const r = await fetch(url, { headers: { 'Authorization': 'token ' + p.token, 'Accept': 'application/vnd.github+json' }, cache:'no-store' });
-      if(!r.ok) throw new Error('GitHub API failed: ' + r.status);
-      const meta = await r.json();
-      const text = atob(String(meta.content||'').replace(/\n/g,''));
-      return JSON.parse(text);
-    } else {
-      const rawUrl = `https://raw.githubusercontent.com/${p.owner}/${p.repo}/${p.branch}/${p.path}`;
-      const r = await fetch(rawUrl, { cache:'no-store' });
-      if(!r.ok) throw new Error('Raw fetch failed: ' + r.status);
-      return await r.json();
-    }
-  }
-  function hardReload(){
-    const u = new URL(location.href); u.searchParams.set('__hr', Date.now().toString()); location.replace(u.toString());
-  }
-  // v67 Save SETTINGS ONLY
-  window.doSave = function(){
-    const p=getPrefs();
-    if(!p.owner || !p.repo || !p.path){ alert('Please fill owner, repo and path.'); return; }
-    LS.setItem('hourlogger.sync', JSON.stringify(p));
-    if (window.toast) window.toast('Cloud sync settings saved (no push).');
-  };
-  // v67 Load: clear caches -> write -> hard refresh
-  window.doLoad = async function(){
-    const p=getPrefs();
-    if(!p.owner || !p.repo || !p.path){ alert('Missing owner/repo/path'); return; }
-    try{
-      const prev = LS.getItem('hourlogger.data'); if(prev) LS.setItem('hourlogger.backup', prev);
-      const data = await fetchJSONWithToken(p);
-      await clearCaches();
-      LS.setItem('hourlogger.data', JSON.stringify(data||{}));
-      SS.setItem('hourlogger.justLoaded','1');
-      if (navigator.serviceWorker?.controller){ navigator.serviceWorker.controller.postMessage({type:'SKIP_WAITING'}); }
-      setTimeout(hardReload, 120);
-    }catch(e){ console.error(e); alert('Load failed. Check repo/branch/path and token (if private).'); }
-  };
-  // Quick Sync UI
-  function humanize(ts){ if(!ts) return '—'; try{ const d=new Date(ts); if(isNaN(d.getTime())) return '—'; return d.toLocaleString(); }catch(_){ return '—'; } }
-  function updateLastPushTexts(){
-    const ts = LS.getItem('hourlogger.lastPushAt') || '';
-    document.querySelectorAll('.quick-sync [data-last-push]').forEach(el=> el.textContent = 'Last push: ' + humanize(ts));
-  }
-  function ensureQuickSync(){
-    document.querySelectorAll('.version').forEach(verEl=>{
-      if (verEl.nextElementSibling && verEl.nextElementSibling.classList && verEl.nextElementSibling.classList.contains('quick-sync')) return;
-      const wrap = document.createElement('div');
-      wrap.className = 'quick-sync';
-      wrap.innerHTML = '<div class="last"><span data-last-push>Last push: —</span></div>' +
-                       '<div class="qs-actions">' +
-                       '<button class="btn small primary" data-action="push-now">Push now</button>' +
-                       '<button class="btn small" data-action="load-now">Load from GitHub</button>' +
-                       '</div>';
-      verEl.after(wrap);
-    });
-    updateLastPushTexts();
-  }
-  ensureQuickSync();
-  document.addEventListener('hourlogger:view', ensureQuickSync);
-  document.addEventListener('click', async (e)=>{
-    const btn = e.target.closest('[data-action]'); if(!btn) return;
-    const act = btn.getAttribute('data-action');
-    if(act==='load-now'){ e.preventDefault(); if(window.doLoad) return window.doLoad(); }
-    if(act==='push-now'){ e.preventDefault();
-      try{
-        const p = getPrefs();
-        if(p && p.token && p.owner && p.repo){
-          const headers = { 'Authorization':'token '+p.token, 'Accept':'application/vnd.github+json' };
-          const getUrl  = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}?ref=${encodeURIComponent(p.branch||'main')}`;
-          const r1 = await fetch(getUrl, { headers, cache:'no-store' });
-          const meta = r1.ok ? await r1.json() : null;
-          const sha = meta && meta.sha ? meta.sha : undefined;
-          const content = LS.getItem('hourlogger.data') || JSON.stringify(window.state||{});
-          const putUrl = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}`;
-          const body = { message:'Hour Logger push', content:btoa(unescape(encodeURIComponent(content))), branch:(p.branch||'main') };
-          if(sha) body.sha = sha;
-          const r2 = await fetch(putUrl, { method:'PUT', headers, body: JSON.stringify(body) });
-          if(!r2.ok) throw new Error('Push failed: '+r2.status);
-        } else if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
-          await window.hourloggerCloud.saveSilently();
-        } else {
-          alert('Cloud sync is not configured.'); return;
-        }
-        LS.setItem('hourlogger.lastPushAt', new Date().toISOString());
-        if (typeof toast==='function') toast('Pushed to GitHub');
-        updateLastPushTexts();
-      }catch(err){ console.error(err); alert('Push failed. Check owner/repo/path and token.'); }
-    }
-  });
-  // Wrap existing silent push to also stamp lastPushAt
+  if(bPush){ bPush.addEventListener('click', e=>{ e.preventDefault(); pushNow(); }); }
+
+  // also stamp last push after silent pushes
   setTimeout(()=>{
     try{
       if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
@@ -868,13 +921,12 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
         window.hourloggerCloud.saveSilently = async function(){
           try{ await orig(); } finally{
             localStorage.setItem('hourlogger.lastPushAt', new Date().toISOString());
-            updateLastPushTexts();
+            updateLastPush();
           }
         }
       }
     }catch(_){}
   },0);
-  document.documentElement.setAttribute('data-app-version','v67');
 })();
 </script>
 
