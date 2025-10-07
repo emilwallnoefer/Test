@@ -218,7 +218,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 69</div>
+    <div class="version version-menu">Hour Logger 70</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -255,7 +255,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 69</div>
+    <div class="version">Hour Logger 70</div>
   </section>
 
   <!-- LOGGER -->
@@ -285,7 +285,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 69</div>
+    <div class="version">Hour Logger 70</div>
   </section>
 
   <!-- Focus bubble -->
@@ -314,7 +314,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "69";
+    const APP_VERSION = "70";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -840,7 +840,18 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
   async function ghPutFile(p, content, sha){ const url=`https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path)}`; const body={message:'Hour Logger sync',content:btoa(unescape(encodeURIComponent(content))),branch:p.branch}; if(sha) body.sha=sha; const r=await fetch(url,{method:'PUT',headers:await ghHeaders(p.token),body:JSON.stringify(body)}); if(!r.ok) throw new Error('GitHub PUT failed: '+r.status); return await r.json(); }
 
   async function doLoad(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token'); const meta=await ghGetFile(p); if(!meta){ alert('File not found (save once first).'); return; } const raw=atob(meta.content.replace(/\n/g,'')); const obj=JSON.parse(raw); if(obj && typeof obj==='object'){ if(!obj.work) obj.work={}; if(!obj.comp) obj.comp={}; localStorage.setItem('hourlogger.data', JSON.stringify(obj)); window.state=obj; renderMenu&&renderMenu(); renderWeek&&renderWeek(); toast&&toast('Loaded from GitHub'); } }catch(e){ console.error(e); alert('Load failed: '+e.message); } }
-  async function doSave(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) throw new Error('Missing owner/repo/token'); const content=localStorage.getItem('hourlogger.data') || JSON.stringify(state||{}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); toast&&toast('Saved to GitHub'); hidePanel(); }catch(e){ console.error(e); alert('Save failed: '+e.message); } }
+  
+  async function doSave(){
+    try{
+      // Save *settings only* (no push). Footer "Push now" handles data writes.
+      const p = getPrefs();
+      if(!p.owner || !p.repo || !p.path){ throw new Error('Please fill owner, repo and path'); }
+      localStorage.setItem('hourlogger.sync', JSON.stringify(p));
+      if (typeof toast==='function') toast('Cloud sync settings saved');
+      // keep panel open so users can continue editing; close on backdrop
+    }catch(e){ console.error(e); alert('Save failed: '+e.message); }
+  }
+    ); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); toast&&toast('Saved to GitHub'); hidePanel(); }catch(e){ console.error(e); alert('Save failed: '+e.message); } }
   async function saveSilently(){ try{ const p=getPrefs(); if(!p.token||!p.owner||!p.repo) return; const content=localStorage.getItem('hourlogger.data') || JSON.stringify(state||{}); const meta=await ghGetFile(p); await ghPutFile(p, content, meta && meta.sha); }catch(_e){} }
 
   async function loadSilently(){
@@ -864,6 +875,52 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
   if(btnS) btnS.addEventListener('click', doSave);
 
   window.hourloggerCloud = { save: doSave, saveSilently: saveSilently, loadSilently: loadSilently, auto: true };
+
+  // Expose a robust global loader used by footer "Load from GitHub"
+  window.doLoad = async function(){
+    try{
+      const p = (function(){ try { return JSON.parse(localStorage.getItem('hourlogger.sync')||'{}'); } catch(_) { return {}; } })();
+      if(!p || !p.owner || !p.repo){ alert('Cloud sync is not configured.'); return; }
+      // Prefer token via Contents API; fallback to raw for public repos
+      async function fetchJSON(){
+        if(p.token){
+          const url = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}?ref=${encodeURIComponent(p.branch||'main')}`;
+          const r = await fetch(url, { headers: { 'Authorization': 'token ' + p.token, 'Accept': 'application/vnd.github+json' }, cache:'no-store' });
+          if(!r.ok) throw new Error('GitHub API failed: ' + r.status);
+          const meta = await r.json();
+          return JSON.parse(atob(String(meta.content||'').replace(/\n/g,'')));
+        } else {
+          const rawUrl = `https://raw.githubusercontent.com/${p.owner}/${p.repo}/${p.branch||'main'}/${p.path||'data/hourlogger-data.json'}`;
+          const r = await fetch(rawUrl, { cache:'no-store' });
+          if(!r.ok) throw new Error('Raw fetch failed: ' + r.status);
+          return await r.json();
+        }
+      }
+      const prev = localStorage.getItem('hourlogger.data'); if(prev) localStorage.setItem('hourlogger.backup', prev);
+      const data = await fetchJSON();
+
+      // Clear all caches first (SW + CacheStorage)
+      try{
+        if(navigator.serviceWorker?.controller){
+          navigator.serviceWorker.controller.postMessage({type:'clearCaches'});
+        }
+        if('caches' in window){
+          const ks = await caches.keys();
+          await Promise.all(ks.map(k => caches.delete(k)));
+        }
+      }catch(_){}
+
+      // Write
+      localStorage.setItem('hourlogger.data', JSON.stringify(data||{}));
+      window.state = data || { work:{}, comp:{} };
+      try{ if (typeof renderMenu==='function') renderMenu(); if (typeof renderWeek==='function') renderWeek(); }catch(_){}
+      if (typeof toast==='function') toast('Loaded from GitHub');
+
+      // Hard refresh with cache-busting param
+      const u=new URL(location.href); u.searchParams.set('__hr', Date.now().toString()); setTimeout(()=>location.replace(u.toString()), 120);
+    }catch(e){ console.error(e); alert('Load failed: '+e.message); }
+  };
+
 
       // Auto-load from GitHub on startup (silent, once per page load)
       (async function(){
@@ -889,7 +946,7 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 
   <footer id="appFooter" class="app-footer fx-top">
     <div class="app-footer-inner">
-      <div class="version-label">Hour Logger 69 • <span id="lastPushLabel">Last push: —</span></div>
+      <div class="version-label">Hour Logger 70 • <span id="lastPushLabel">Last push: —</span></div>
       <div class="qs-actions">
         <button class="btn small primary" id="btnPushNow">Push now</button>
         <button class="btn small" id="btnLoadNow">Load from GitHub</button>
