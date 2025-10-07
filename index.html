@@ -172,25 +172,12 @@ html, body { overflow-x: hidden; }
   .break-item .bi-times{ grid-template-columns:1fr; }
 }
 
+
+    .quick-sync{ text-align:center; margin-top:6px }
+    .quick-sync .last{ color: var(--muted); font-size:11px; margin:6px 0 }
+    .quick-sync .qs-actions{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
+    
 </style>
-
-<!-- v66-early-guard -->
-<script>
-(function(){
-  try{
-    const LS = localStorage, SS = sessionStorage;
-    if (SS.getItem('hourlogger.justLoaded') === '1'){
-      const data = LS.getItem('hourlogger.data') || '';
-      const backup = LS.getItem('hourlogger.backup') || '';
-      if ((!data || data.length < 10) && backup){
-        LS.setItem('hourlogger.data', backup);
-      }
-      SS.removeItem('hourlogger.justLoaded');
-    }
-  }catch(_){}
-})();
-</script>
-
 </head>
 <body>
   <div class="toast-wrap"><div id="toast" class="toast">Saved</div></div>
@@ -221,7 +208,7 @@ html, body { overflow-x: hidden; }
       </div>
       <div class="line-stats"><span class="pill" id="pillWeek">Weekly hours: 0h 00m</span><span class="pill" id="pillBank">Overtime bank: 0h 00m</span></div>
     </div>
-    <div class="version version-menu">Hour Logger 66</div>
+    <div class="version version-menu">Hour Logger 67</div>
   </section>
 
   <!-- Cloud Sync Panel -->
@@ -236,7 +223,6 @@ html, body { overflow-x: hidden; }
         <input id="ghPath" type="text" placeholder="File path (e.g., data/hourlogger-data.json)" />
         <input id="ghToken" type="password" placeholder="Personal Access Token (repo: read/write)"/>
         <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap">
-          <button class="btn small" id="ghLoad">Load from GitHub</button>
           <button class="btn small primary" id="ghSave">Save to GitHub</button>
         </div>
         <p style="font-size:12px; color:var(--muted); margin:4px 0 0">Token is stored only on this device. The JSON stays in GitHub.</p>
@@ -259,7 +245,7 @@ html, body { overflow-x: hidden; }
       <div id="weekStrip" class="week-strip"></div>
       <div class="cal-footer" id="calFooter"></div>
     </div>
-    <div class="version">Hour Logger 66</div>
+    <div class="version">Hour Logger 67</div>
   </section>
 
   <!-- LOGGER -->
@@ -289,7 +275,7 @@ html, body { overflow-x: hidden; }
       <button class="btn primary" id="btnSave">Save day</button>
       <button class="btn" id="btnResetWork" style="white-space:nowrap">Reset this day</button>
     </div>
-    <div class="version">Hour Logger 66</div>
+    <div class="version">Hour Logger 67</div>
   </section>
 
   <!-- Focus bubble -->
@@ -318,7 +304,7 @@ html, body { overflow-x: hidden; }
   </div>
 
   <script>
-    const APP_VERSION = "66";
+    const APP_VERSION = "67";
 
     // Toast
     const __toast = document.getElementById('toast');
@@ -729,8 +715,8 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
   }
 
 
-  if(btnL) btnL.addEventListener('click', (e)=>{ e.preventDefault(); window.doLoad && window.doLoad(); });
-  if(btnS) btnS.addEventListener('click', (e)=>{ e.preventDefault(); window.doSave && window.doSave(); });
+  if(btnL) btnL.addEventListener('click', doLoad);
+  if(btnS) btnS.addEventListener('click', doSave);
 
   window.hourloggerCloud = { save: doSave, saveSilently: saveSilently, loadSilently: loadSilently, auto: true };
 
@@ -753,18 +739,24 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
 })();
   </script>
 
-<!-- v66 overrides -->
+<!-- v67 overrides & quick sync -->
 <script>
 (() => {
   const LS=localStorage, SS=sessionStorage;
   function id(x){ return document.getElementById(x); }
   function getPrefs(){
-    const owner = (id('ghOwner')?.value || id('gh-owner')?.value || LS.getItem('gh.owner') || '').trim();
-    const repo  = (id('ghRepo') ?.value || id('gh-repo') ?.value || LS.getItem('gh.repo')  || '').trim();
-    const branch= (id('ghBranch')?.value || id('gh-branch')?.value || LS.getItem('gh.branch')|| 'main').trim();
-    const path  = (id('ghPath')  ?.value || id('gh-path')  ?.value || LS.getItem('gh.path')  || 'data/hourlogger-data.json').trim();
-    const token = (id('ghToken') ?.value || id('gh-token') ?.value || LS.getItem('gh.token') || '').trim();
-    return { owner, repo, branch, path, token };
+    try {
+      const p = JSON.parse(LS.getItem('hourlogger.sync')||'{}');
+      return {
+        owner: p.owner|| (id('ghOwner')&&id('ghOwner').value.trim()) || '',
+        repo:  p.repo || (id('ghRepo') &&id('ghRepo').value.trim())  || '',
+        branch:p.branch|| (id('ghBranch')&&id('ghBranch').value.trim())||'main',
+        path:  p.path || (id('ghPath')  &&id('ghPath').value.trim())  || 'data/hourlogger-data.json',
+        token: p.token|| (id('ghToken') &&id('ghToken').value.trim()) || ''
+      };
+    } catch(_) {
+      return { owner:'', repo:'', branch:'main', path:'data/hourlogger-data.json', token:'' };
+    }
   }
   async function clearCaches(){
     try{
@@ -795,18 +787,14 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
   function hardReload(){
     const u = new URL(location.href); u.searchParams.set('__hr', Date.now().toString()); location.replace(u.toString());
   }
-  // Save SETTINGS ONLY (no push)
+  // v67 Save SETTINGS ONLY
   window.doSave = function(){
     const p=getPrefs();
     if(!p.owner || !p.repo || !p.path){ alert('Please fill owner, repo and path.'); return; }
-    LS.setItem('gh.owner', p.owner);
-    LS.setItem('gh.repo', p.repo);
-    LS.setItem('gh.branch', p.branch || 'main');
-    LS.setItem('gh.path', p.path);
-    if (p.token) LS.setItem('gh.token', p.token);
+    LS.setItem('hourlogger.sync', JSON.stringify(p));
     if (window.toast) window.toast('Cloud sync settings saved (no push).');
   };
-  // Load: clear caches -> write -> hard refresh
+  // v67 Load: clear caches -> write -> hard refresh
   window.doLoad = async function(){
     const p=getPrefs();
     if(!p.owner || !p.repo || !p.path){ alert('Missing owner/repo/path'); return; }
@@ -820,8 +808,73 @@ window.addEventListener('resize', positionBubbleLayout, { once: true });
       setTimeout(hardReload, 120);
     }catch(e){ console.error(e); alert('Load failed. Check repo/branch/path and token (if private).'); }
   };
-  window.loadSilently = async function(){ try{ await window.doLoad(); return true; }catch(_){ return false; } };
-  document.documentElement.setAttribute('data-app-version','v66');
+  // Quick Sync UI
+  function humanize(ts){ if(!ts) return '—'; try{ const d=new Date(ts); if(isNaN(d.getTime())) return '—'; return d.toLocaleString(); }catch(_){ return '—'; } }
+  function updateLastPushTexts(){
+    const ts = LS.getItem('hourlogger.lastPushAt') || '';
+    document.querySelectorAll('.quick-sync [data-last-push]').forEach(el=> el.textContent = 'Last push: ' + humanize(ts));
+  }
+  function ensureQuickSync(){
+    document.querySelectorAll('.version').forEach(verEl=>{
+      if (verEl.nextElementSibling && verEl.nextElementSibling.classList && verEl.nextElementSibling.classList.contains('quick-sync')) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'quick-sync';
+      wrap.innerHTML = '<div class="last"><span data-last-push>Last push: —</span></div>' +
+                       '<div class="qs-actions">' +
+                       '<button class="btn small primary" data-action="push-now">Push now</button>' +
+                       '<button class="btn small" data-action="load-now">Load from GitHub</button>' +
+                       '</div>';
+      verEl.after(wrap);
+    });
+    updateLastPushTexts();
+  }
+  ensureQuickSync();
+  document.addEventListener('hourlogger:view', ensureQuickSync);
+  document.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('[data-action]'); if(!btn) return;
+    const act = btn.getAttribute('data-action');
+    if(act==='load-now'){ e.preventDefault(); if(window.doLoad) return window.doLoad(); }
+    if(act==='push-now'){ e.preventDefault();
+      try{
+        const p = getPrefs();
+        if(p && p.token && p.owner && p.repo){
+          const headers = { 'Authorization':'token '+p.token, 'Accept':'application/vnd.github+json' };
+          const getUrl  = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}?ref=${encodeURIComponent(p.branch||'main')}`;
+          const r1 = await fetch(getUrl, { headers, cache:'no-store' });
+          const meta = r1.ok ? await r1.json() : null;
+          const sha = meta && meta.sha ? meta.sha : undefined;
+          const content = LS.getItem('hourlogger.data') || JSON.stringify(window.state||{});
+          const putUrl = `https://api.github.com/repos/${p.owner}/${p.repo}/contents/${encodeURIComponent(p.path||'data/hourlogger-data.json')}`;
+          const body = { message:'Hour Logger push', content:btoa(unescape(encodeURIComponent(content))), branch:(p.branch||'main') };
+          if(sha) body.sha = sha;
+          const r2 = await fetch(putUrl, { method:'PUT', headers, body: JSON.stringify(body) });
+          if(!r2.ok) throw new Error('Push failed: '+r2.status);
+        } else if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
+          await window.hourloggerCloud.saveSilently();
+        } else {
+          alert('Cloud sync is not configured.'); return;
+        }
+        LS.setItem('hourlogger.lastPushAt', new Date().toISOString());
+        if (typeof toast==='function') toast('Pushed to GitHub');
+        updateLastPushTexts();
+      }catch(err){ console.error(err); alert('Push failed. Check owner/repo/path and token.'); }
+    }
+  });
+  // Wrap existing silent push to also stamp lastPushAt
+  setTimeout(()=>{
+    try{
+      if (window.hourloggerCloud && typeof window.hourloggerCloud.saveSilently==='function'){
+        const orig = window.hourloggerCloud.saveSilently;
+        window.hourloggerCloud.saveSilently = async function(){
+          try{ await orig(); } finally{
+            localStorage.setItem('hourlogger.lastPushAt', new Date().toISOString());
+            updateLastPushTexts();
+          }
+        }
+      }
+    }catch(_){}
+  },0);
+  document.documentElement.setAttribute('data-app-version','v67');
 })();
 </script>
 
